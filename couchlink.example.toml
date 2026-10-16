@@ -1,0 +1,55 @@
+# Couchlink settings.
+#
+# The installer copies this file to /etc/couchlink/config.toml. Fill in the
+# values marked REQUIRED, then check the file with:
+#
+#   sudo couchlink --check-config
+#
+# Every other setting has a default and can be left out. Section names like
+# [pc] are only for readability, and each section may appear only once.
+# README.md lists every setting.
+
+[pc]
+pc_host = "target-pc.local"          # REQUIRED: the PC's IP address (reserve it in your router)
+pc_mac  = "AA:BB:CC:DD:EE:FF"        # REQUIRED: MAC of the network card that receives Wake-on-LAN
+# pc_name = "Living Room PC"         # name on the status page; if unset, Couchlink asks the PC for its hostname
+ssh_user = "deck"                    # deck on SteamOS. On Bazzite and others, your own username
+suspend_command = "sudo -n systemctl suspend"
+# wol_broadcast = "192.168.1.255"    # try your subnet broadcast if waking is unreliable
+
+[cec]
+# Physical addresses, written "12:00" or "1.2.0.0". Find them with:
+#   echo "scan" | cec-client -s -d 1
+# The PC is not a CEC device, so watch the bus while switching to it by hand
+# (see "Finding your CEC addresses" in README.md).
+#
+# Example layout (the one Couchlink was built on):
+#   TV HDMI 1 (ARC) -> soundbar               soundbar_address = "10:00"
+#     soundbar HDMI 1 -> streaming box        "11:00"
+#     soundbar HDMI 2 -> PC                   pc_addresses = ["12:00"]
+#   TV HDMI 4 -> Raspberry Pi                 pi_address = "40:00"
+pc_addresses = []                    # REQUIRED, e.g. ["12:00"]
+# pi_address = "40:00"               # REQUIRED
+# soundbar_address = "10:00"
+# soundbar_pc_audio_address = "12:00"  # only if the PC's picture goes to the TV and its sound to the soundbar
+ignore_announcements_from = []       # e.g. [5] to ignore the soundbar's own announcements
+
+[behavior]
+claim_pc_input = true                # the Pi announces itself as the active source for the PC
+auto_switch_on_pc_wake = "always"    # PC woke by itself: "always" | "if_tv_on" | "never"
+on_pc_sleep = "nothing"              # PC went to sleep by itself: "switch" | "standby" | "nothing"
+# pc_sleep_switch_to = "11:00"       # with "switch": the input to change to, e.g. the streaming box
+select_soundbar_audio = false        # experimental
+verify_non_tv_standby = true
+hid_passthrough = true               # needs the installer's --with-hid option
+dashboard_port = 8080                # status page, 0 turns it off
+
+[timing]
+away_debounce = 5                    # seconds off the PC's input before suspending
+guard_window = 15
+max_guard_recoveries = 2
+power_poll_interval = 60
+pc_sleep_confirm = 12                # seconds offline before the PC counts as asleep
+
+[diagnostics]
+raw_debug = true                     # log raw CEC traffic, turn off once everything works

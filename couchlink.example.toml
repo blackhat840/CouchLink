@@ -7,7 +7,7 @@
 #
 # Every other setting has a default and can be left out. Section names like
 # [pc] are only for readability, and each section may appear only once.
-# README.md lists every setting.
+# docs/configuration.md lists every setting.
 
 [pc]
 pc_host = "target-pc.local"          # REQUIRED: the PC's IP address (reserve it in your router)
@@ -21,7 +21,7 @@ suspend_command = "sudo -n systemctl suspend"
 # Physical addresses, written "12:00" or "1.2.0.0". Find them with:
 #   echo "scan" | cec-client -s -d 1
 # The PC is not a CEC device, so watch the bus while switching to it by hand
-# (see "Finding your CEC addresses" in README.md).
+# (see "Finding your CEC addresses" in docs/configuration.md).
 #
 # Example layout (the one Couchlink was built on):
 #   TV HDMI 1 (ARC) -> soundbar               soundbar_address = "10:00"

@@ -22,10 +22,9 @@ Design notes:
   * --dry-run watches the bus and logs what it would do without doing it.
 
 Talks to the CEC bus through cec-client from libcec (Pulse-Eight,
-GPL-2.0-or-later), which it runs as a separate program. See the Credits section
-of README.md.
+GPL-2.0-or-later), which it runs as a separate program. See docs/credits.md.
 
-Run with --help for options. See README.md for setup.
+Run with --help for options. See README.md and docs/ for setup.
 """
 import argparse
 import json

@@ -1,0 +1,166 @@
+# Configuration
+
+Finding your CEC addresses, editing the config file, and every setting.
+
+## Finding your CEC addresses
+
+Every HDMI device has a physical address that describes where it is plugged
+in. A device on TV input 2 is `2.0.0.0`. A device on input 1 of a soundbar
+that is itself on TV input 1 is `1.1.0.0`. Couchlink accepts either `1.1.0.0` or
+the short form `11:00`.
+
+**Step 1: scan the bus.**
+
+```bash
+echo "scan" | cec-client -s -d 1
+```
+
+This lists every device that speaks CEC. Trimmed example from the tested setup:
+
+```
+device #0: TV            address: 0.0.0.0
+device #1: Recorder 1    address: 4.0.0.0   (the Pi itself)
+device #4: Playback 1    address: 1.1.0.0   (Google streamer)
+device #5: Audio         address: 1.0.0.0   (soundbar on the TV's ARC port)
+```
+
+**Step 2: find the PC.** The PC does not speak CEC, so it will not appear in
+the scan. Watch the bus while you switch to the PC's input by hand:
+
+```bash
+stdbuf -oL cec-client -d 8 | while IFS= read -r line; do
+  case "$line" in *">>"*|*"<<"*) printf '%(%H:%M:%S)T %s\n' -1 "$line" ;; esac
+done
+```
+
+Switch to the PC's input with the TV or soundbar remote and look for a line
+that names an address, such as:
+
+```
+19:51:07 TRAFFIC: [ 20643]  >> 5f:81:12:00
+```
+
+Here the soundbar (logical address `5`) reports that its active input is now
+`1.2.0.0`. That is the PC.
+
+Stop `couchlink.service` before running either command. Only one program can
+use the CEC adapter at a time.
+
+## The config file
+
+The installer creates `/etc/couchlink/config.toml`. It belongs to root, so edit
+it with:
+
+```bash
+sudo nano /etc/couchlink/config.toml
+```
+
+You only need to set the values for your own setup. Everything else has a
+sensible default (see [Settings reference](#settings-reference) below).
+
+Example for a PC behind the soundbar:
+
+```toml
+[pc]
+pc_host = "192.168.1.50"         # the PC's IP address
+pc_mac  = "aa:bb:cc:dd:ee:ff"    # MAC of the network card used for Wake-on-LAN
+
+[cec]
+pc_addresses = ["12:00"]         # soundbar input 2
+pi_address = "40:00"             # TV input 4
+soundbar_address = "10:00"       # TV input 1 (ARC)
+
+[behavior]
+on_pc_sleep = "switch"           # if the PC goes to sleep by itself,
+pc_sleep_switch_to = "11:00"     # switch the TV to the streamer
+```
+
+Check it after every change:
+
+```bash
+sudo couchlink --check-config
+```
+
+It prints every setting with the value Couchlink will use, or a list of what is
+wrong. Misspelled setting names are reported too.
+
+Section names such as `[pc]` are only there for readability. Each section may
+appear only once in the file.
+
+## Settings reference
+
+All settings are optional except the ones marked as required. Times are in
+seconds.
+
+### The PC
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `pc_host` | required | The PC's IP address or hostname. An IP with a DHCP reservation is the most reliable. |
+| `pc_mac` | required | MAC address of the network card that receives Wake-on-LAN. |
+| `pc_name` | unset | Name shown on the status page. If unset, Couchlink asks the PC for its hostname over SSH, then tries reverse DNS. |
+| `ssh_user` | `"deck"` | The user the Pi logs in as. Correct for SteamOS. On Bazzite and others, set your own username. |
+| `suspend_command` | `"sudo -n systemctl suspend"` | The command run on the PC to put it to sleep. |
+| `wol_broadcast` | `"255.255.255.255"` | Where the Wake-on-LAN packet is sent. Try your subnet broadcast, such as `"192.168.1.255"`, if waking is unreliable. |
+| `wol_port` | `9` | UDP port for Wake-on-LAN. |
+
+### CEC addresses
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `pc_addresses` | required | List of inputs that mean the PC is on screen, such as `["12:00"]`. |
+| `pi_address` | required | The input the Pi is plugged into. |
+| `soundbar_address` | unset | The TV input the soundbar is on. Used to spot automatic switches and for log names. |
+| `soundbar_pc_audio_address` | unset | The soundbar input carrying the PC's audio, if the PC's picture goes to the TV directly. |
+| `guard_addresses` | `[]` | Extra inputs to treat as automatic switches right after a wake. |
+| `pi_logical_address` | `1` | The Pi's CEC logical address. `cec-client` uses 1 by default. |
+| `ignore_announcements_from` | `[]` | Logical addresses whose input announcements are ignored, such as `[5]` for a soundbar. |
+
+### Behavior
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `claim_pc_input` | `true` | When the PC is selected, the Pi announces itself as the active source on the PC's behalf. This keeps the TV and soundbar on the PC and can route remote buttons to the Pi. |
+| `auto_switch_on_pc_wake` | `"always"` | When the PC wakes by itself: `"always"` turns the TV on and switches to it, `"if_tv_on"` only switches if the TV is already on, `"never"` does nothing. |
+| `on_pc_sleep` | `"nothing"` | When the PC goes to sleep by itself while on screen: `"switch"` changes to `pc_sleep_switch_to`, `"standby"` turns the TV off, `"nothing"` leaves the TV alone. |
+| `pc_sleep_switch_to` | unset | The input to change to with `on_pc_sleep = "switch"`. |
+| `select_soundbar_audio` | `false` | Experimental. Asks the soundbar to switch to `soundbar_pc_audio_address` when the PC comes on. |
+| `verify_non_tv_standby` | `true` | When a device other than the TV sends standby (soundbars often do), ask the TV whether it is really off before acting. |
+| `watch_routing_messages` | `true` | Use Routing Change and Routing Information messages. Needed for many TVs. |
+| `hid_passthrough` | `true` | Forward TV remote buttons to the PC as a USB keyboard. Needs the `--with-hid` install. |
+| `hidg_device` | `"/dev/hidg0"` | The USB keyboard device. |
+| `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
+
+### Timing
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `away_debounce` | `5` | How long the TV must stay off the PC's input before the PC is suspended. |
+| `suspend_retry_interval` | `20` | Time between suspend attempts. |
+| `max_suspend_attempts` | `4` | Suspend attempts before giving up and logging an error. |
+| `wol_retry_interval` | `10` | Time between Wake-on-LAN packets. |
+| `max_wol_attempts` | `6` | Wake-on-LAN packets before giving up. |
+| `wake_correlation` | `45` | If the PC comes online this soon after a Wake-on-LAN packet, Couchlink treats it as its own wake. |
+| `guard_window` | `15` | How long after a wake an automatic input switch gets undone. |
+| `guard_delay` | `1.5` | Pause before undoing an automatic switch. |
+| `max_guard_recoveries` | `2` | Automatic switches undone per wake. |
+| `auto_switch_cooldown` | `30` | Minimum time between switching the TV to the PC on its own. |
+| `tv_boot_timeout` | `20` | When the PC wakes with the TV off: how long to wait for the TV to report that it is on before switching it to the PC anyway. |
+| `tv_boot_reclaims` | `3` | After the TV reports that it is on, how many more times to claim the PC's input. |
+| `tv_boot_reclaim_interval` | `2` | Time between those claims. Input changes in this period are undone. |
+| `pc_sleep_confirm` | `12` | How long the PC must stay offline before it counts as asleep. Stops Wi-Fi hiccups from triggering `on_pc_sleep`. |
+| `power_poll_interval` | `60` | How often to ask the TV whether it is on. `0` asks only at startup. |
+| `power_query_delays` | `[2, 8]` | When to ask the TV after another device sends standby. |
+| `ping_interval` | `3` | How often to check whether the PC is reachable. |
+| `tick_interval` | `1` | How often Couchlink re-checks its rules. |
+
+### Diagnostics
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `raw_debug` | `true` | Log every raw CEC message. Turn off once everything works. |
+| `cec_client_command` | `["cec-client", "-d", "8", "-o", "Couchlink"]` | How `cec-client` is started. `-o` sets the name the TV shows for the Pi. |
+
+---
+
+Back to the [Documentation](README.md) or the [README](../README.md).

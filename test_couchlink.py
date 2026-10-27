@@ -814,6 +814,34 @@ class InstallerTests(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.join(self.root, "tmp/couchlink-check.log")))
 
 
+class DocsTests(unittest.TestCase):
+    def test_links_between_pages_resolve(self):
+        """Every relative link in the README and docs/ points to a file that
+        exists, and every #anchor to a heading in it."""
+        import re
+
+        def anchors(path):
+            with open(path) as f:
+                heads = re.findall(r"^#+ (.+)$", f.read(), re.M)
+            return {re.sub(r"[^a-z0-9 -]", "", h.lower()).replace(" ", "-") for h in heads}
+
+        pages = [os.path.join(HERE, "README.md")]
+        docs = os.path.join(HERE, "docs")
+        if os.path.isdir(docs):
+            pages += [os.path.join(docs, n) for n in sorted(os.listdir(docs)) if n.endswith(".md")]
+        for page in pages:
+            with open(page) as f:
+                text = re.sub(r"```.*?```", "", f.read(), flags=re.S)
+            for target in re.findall(r"\]\(([^)\s]+)\)", text):
+                if re.match(r"[a-z]+:", target):
+                    continue
+                path, _, anchor = target.partition("#")
+                full = os.path.normpath(os.path.join(os.path.dirname(page), path)) if path else page
+                self.assertTrue(os.path.exists(full), f"{page}: broken link {target}")
+                if anchor:
+                    self.assertIn(anchor, anchors(full), f"{page}: no heading for {target}")
+
+
 class PcNameTests(unittest.TestCase):
     def test_name_looked_up_once_pc_is_reachable(self):
         s = Sim()

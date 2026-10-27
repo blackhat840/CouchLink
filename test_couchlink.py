@@ -5,6 +5,7 @@ Offline tests for couchlink.py. No TV, Pi or PC needed: a simulated clock and
 fake actions stand in for the hardware. Run from the folder that holds both files:
 
     python3 test_couchlink.py
+    python3 test_couchlink.py --quick   # skip the installer's own tests, as the installer does
 """
 import importlib.util
 import io
@@ -20,6 +21,12 @@ import unittest
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+# --quick skips the tests of install.sh itself. They start a lot of processes,
+# which is slow on a Pi Zero, and say nothing about whether CouchLink works there.
+QUICK = "--quick" in sys.argv
+if QUICK:
+    sys.argv.remove("--quick")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("couchlink", os.path.join(HERE, "couchlink.py"))
@@ -712,6 +719,7 @@ STUB_INSTALLER = '#!/bin/bash\necho "ran $COUCHLINK_RELEASE_TAG $*" > "$ROOT/stu
 
 
 @unittest.skipUnless(shutil.which("bash"), "bash is needed for the installer tests")
+@unittest.skipIf(QUICK, "tests install.sh itself (skipped with --quick)")
 class InstallerTests(unittest.TestCase):
     """install.sh against a local stand-in for GitHub. The downloaded installers
     are stubs that record how they were run."""
@@ -764,7 +772,8 @@ class InstallerTests(unittest.TestCase):
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.addCleanup(self.server.server_close)
-        self.addCleanup(self.server.shutdown)
+        # shutdown() waits up to half a second for the server to notice, so don't wait
+        self.addCleanup(lambda: threading.Thread(target=self.server.shutdown, daemon=True).start())
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
 
     def install(self, *args, api=None, **extra_env):
@@ -1853,7 +1862,8 @@ class ApiTests(unittest.TestCase):
         t.start()
         self.server = couchlink.start_dashboard(0, self.sim.ctl, events)
         self.port = self.server.server_address[1]
-        self.addCleanup(self.server.shutdown)
+        # shutdown() waits up to half a second for the server to notice, so don't wait
+        self.addCleanup(lambda: threading.Thread(target=self.server.shutdown, daemon=True).start())
         self.addCleanup(events.put, None)
 
     def post(self, path, body=b"{}", ctype="application/json", key=KEY, **headers):

@@ -22,8 +22,8 @@ Common problems, what to check, and the known limitations.
 | The PC is suspended while you use it | Check the log for the input that was announced just before. If it came from the soundbar or another device, `ignore_announcements_from` or `guard_addresses` may help. |
 | The TV switches away after the PC wakes | Look for `RECOVER` lines. If they appear but the TV does not come back, your TV may ignore the Pi's Active Source messages. |
 | The TV is slow to switch to the PC after a controller wake | Look for `TV reports that it is on`. If the log shows `did not report that it is on` instead, your TV does not answer power queries while it starts. Lower `tv_boot_timeout`. |
-| The status page has no wake and sleep buttons | Make an API key with `sudo couchlink --new-api-key`, then `sudo systemctl restart couchlink`. |
-| The buttons say `Wrong API key` | The page asks for the key again. If you lost it, make a new one with `sudo couchlink --new-api-key`. |
+| The status page has no wake and sleep buttons | Generate an API key with `sudo couchlink --new-api-key`, then `sudo systemctl restart couchlink`. |
+| The buttons say `Wrong API key` | The page asks for the key again. If you lost it, generate a new one with `sudo couchlink --new-api-key`. |
 | The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
 | The TV turns on when you wake the PC to stream | The PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. |
 | The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. |

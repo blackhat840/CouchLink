@@ -33,7 +33,8 @@
 #
 # First install:
 #   1. Installs cec-utils and ping
-#   2. Runs the offline tests (if test_couchlink.py is here)
+#   2. Runs the offline tests (if test_couchlink.py is here), without the
+#      installer's own tests, which are slow on a Pi Zero
 #   3. Installs the program as /usr/local/bin/couchlink
 #   4. Creates /etc/couchlink/config.toml from the example (never overwrites yours)
 #   5. Installs couchlink.service, left disabled until you've tested
@@ -289,7 +290,7 @@ fi
 # ---------------------------------------------------------------- tests
 if [ -f "$HERE/test_couchlink.py" ]; then
     say "Running offline tests"
-    if ( cd "$HERE" && python3 test_couchlink.py ) > "$TEST_LOG" 2>&1; then
+    if ( cd "$HERE" && python3 test_couchlink.py --quick ) > "$TEST_LOG" 2>&1; then
         grep -aE "^Ran|^OK" "$TEST_LOG"
     else
         tail -25 "$TEST_LOG"

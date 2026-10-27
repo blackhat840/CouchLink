@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Couchlink 2.3.1
+Couchlink 2.4
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -48,7 +48,7 @@ except ModuleNotFoundError:          # Python < 3.11
     except ModuleNotFoundError:
         tomllib = None
 
-VERSION = "2.3.1"
+VERSION = "2.4"
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 EX_CONFIG = 78
 
@@ -1498,6 +1498,157 @@ def start_dashboard(port, controller):
 
 
 # --------------------------------------------------------------------------
+# setup: the settings that don't need CEC addresses
+# --------------------------------------------------------------------------
+DOCS_URL = "https://github.com/blackhat840/CouchLink/blob/main/docs"
+PLACEHOLDERS = {"target-pc.local", "aa:bb:cc:dd:ee:ff"}
+MAC_RE = re.compile(r"([0-9a-f]{2}[:-]){5}[0-9a-f]{2}", re.IGNORECASE)
+
+
+def set_config_value(text, key, value):
+    """Set key = value in TOML text, keeping its comment and position. A
+    commented-out key is switched on. A missing key is added at the end."""
+    rendered = json.dumps(value) if isinstance(value, str) else str(value).lower()
+    line_re = re.compile(rf'^(\s*)#?\s*{key}(\s*)=\s*("[^"]*"|[^#\n]*?)(\s*#.*)?$', re.M)
+    m = line_re.search(text)
+    if m is None:
+        return text.rstrip("\n") + f"\n{key} = {rendered}\n"
+    indent, pad, _, comment = m.groups()
+    line = f"{indent}{key}{pad}= {rendered}"
+    if comment:
+        column = m.start(4) - m.start() + len(comment) - len(comment.lstrip())
+        line = line.ljust(column - 1) + " " + comment.lstrip()
+    return text[:m.start()] + line + text[m.end():]
+
+
+def find_mac(host):
+    """The MAC address the Pi sees for host, from the ARP table, or None."""
+    try:
+        subprocess.run(["ping", "-c", "1", "-W", "1", host], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL, timeout=5)
+        ip = socket.gethostbyname(host)
+        with open("/proc/net/arp") as f:
+            for line in f.read().splitlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 4 and fields[0] == ip and fields[3] != "00:00:00:00:00:00":
+                    return fields[3].lower()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return None
+
+
+def setup_ssh_key(host, user, out):
+    """Create root's SSH key if needed, copy it to the PC, and test it."""
+    key = "/root/.ssh/id_ed25519"
+    if not os.path.exists(key):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key], check=False)
+    out(f"Copying the key to {user}@{host}. Type the PC's password when asked.")
+    subprocess.run(["ssh-copy-id", "-i", key + ".pub", f"{user}@{host}"], check=False)
+    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", f"{user}@{host}", "echo ok"],
+                       capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip() == "ok":
+        out("SSH works without a password.")
+        return True
+    out(f"SSH still asks for a password or can't connect. See {DOCS_URL}/preparing-the-pc.md")
+    return False
+
+
+def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_ssh_key):
+    """Ask for the settings that don't need CEC addresses and write them to the config."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        out(f"{path} not found. Run the installer first.")
+        return 1
+    current, _ = load_config(path)
+    current = current or dict(DEFAULTS)
+
+    def prompt(question, default=None, check=None, error=""):
+        while True:
+            hint = f" [{default}]" if default else ""
+            answer = ask(f"{question}{hint}: ").strip() or (default or "")
+            if answer and (check is None or check(answer)):
+                return answer
+            out(error or "Please enter a value.")
+
+    def known(key):
+        value = current.get(key)
+        return value if isinstance(value, str) and value.lower() not in PLACEHOLDERS else None
+
+    out("Couchlink setup. Press Enter to keep the value in brackets.")
+    out("")
+    out("The PC's IP address. Reserve it in your router so it never changes.")
+    host = prompt("PC IP address", known("pc_host"),
+                  lambda a: re.fullmatch(r"[A-Za-z0-9.:-]+", a) and a.lower() not in PLACEHOLDERS,
+                  "Enter an address such as 192.168.1.50.")
+
+    out("")
+    out("The MAC address of the PC's network card, used to wake it. A wired card works best.")
+    found = mac_finder(host)
+    if found:
+        out(f"Found {found} for {host}.")
+    mac = prompt("PC MAC address", found or known("pc_mac"),
+                 lambda a: MAC_RE.fullmatch(a) and a.lower().replace("-", ":") not in PLACEHOLDERS,
+                 "Enter it in the form aa:bb:cc:dd:ee:ff.")
+
+    out("")
+    out("The user the Pi logs in to the PC as. It is deck on SteamOS. On Bazzite, use your own username.")
+    user = prompt("SSH user", current.get("ssh_user") or "deck",
+                  lambda a: re.fullmatch(r"[A-Za-z0-9._-]+", a), "Enter a username such as deck.")
+
+    out("")
+    sleep_mode = None
+    if current.get("on_pc_sleep") == "switch":
+        out("When the PC goes to sleep by itself, the TV switches to another input. Keeping that.")
+    else:
+        out("When the PC goes to sleep by itself, for example from the Steam menu:")
+        out("  1) leave the TV alone")
+        out("  2) turn the TV off")
+        out("Switching the TV to another input is also possible once you know its CEC address.")
+        default = "2" if current.get("on_pc_sleep") == "standby" else "1"
+        choice = prompt("Choose 1 or 2", default, lambda a: a in ("1", "2"), "Enter 1 or 2.")
+        sleep_mode = "standby" if choice == "2" else "nothing"
+
+    original = text
+    for key, value in (("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")),
+                       ("ssh_user", user), ("on_pc_sleep", sleep_mode)):
+        if value is not None:
+            text = set_config_value(text, key, value)
+    try:
+        with open(path + ".bak", "w") as f:
+            f.write(original)
+        with open(path, "w") as f:
+            f.write(text)
+    except PermissionError:
+        out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup")
+        return 1
+    out("")
+    out(f"Saved to {path}. The previous version is in {path}.bak.")
+
+    out("")
+    out("The Pi needs an SSH key the PC trusts, so it can put the PC to sleep.")
+    out("The PC needs a password and its SSH server turned on first (steps 1 and 2 of")
+    out(f"{DOCS_URL}/preparing-the-pc.md).")
+    if prompt("Set up the SSH key now? (y/n)", "y", lambda a: a.lower() in ("y", "n")).lower() == "y":
+        ssh_setup(host, user, out)
+    else:
+        out("Skipped. Run sudo couchlink --setup again later to do it.")
+
+    settings, _ = load_config(path)
+    _, problems = validate(settings)
+    out("")
+    if problems:
+        out("Still to do:")
+        for p in problems:
+            out(f"  {p}")
+        out(f"Find the CEC addresses with {DOCS_URL}/configuration.md")
+    else:
+        out("The config is complete. Check it with: sudo couchlink --check-config")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
 
@@ -1507,7 +1658,14 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true",
                     help="watch the bus and log decisions without waking, suspending or switching anything")
     ap.add_argument("--check-config", action="store_true", help="validate the config and exit")
+    ap.add_argument("--setup", action="store_true",
+                    help="ask for the settings that don't need CEC addresses and save them")
     args = ap.parse_args(argv)
+    if args.setup:
+        if os.geteuid() != 0:
+            print("Run it with sudo: sudo couchlink --setup")
+            sys.exit(1)
+        sys.exit(run_setup(args.config))
 
     settings, problems = load_config(args.config)
     cfg = None

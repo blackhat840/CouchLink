@@ -791,6 +791,50 @@ class InstallerTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("Could not reach GitHub", out)
 
+    def lone_script(self):
+        """Only install.sh, as if it was downloaded on its own."""
+        for name in ("couchlink.py", "couchlink.example.toml"):
+            os.remove(os.path.join(self.src, name))
+
+    def not_installed(self):
+        os.remove(os.path.join(self.root, "usr/local/bin/couchlink"))
+        os.remove(os.path.join(self.root, "etc/couchlink/config.toml"))
+
+    def test_lone_script_installs_latest_release(self):
+        self.lone_script()
+        self.not_installed()
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.3")         # a first install, not --update
+
+    def test_lone_script_installs_chosen_release(self):
+        self.lone_script()
+        self.not_installed()
+        code, out = self.install("--release", "v2.2", "--with-hid")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.2 --with-hid")
+
+    def test_lone_script_updates_an_existing_install(self):
+        self.lone_script()
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertIn("already installed, so this updates it", out)
+        self.assertEqual(self.stub_ran(), "ran v2.3 --update")
+
+    def test_update_without_an_install_explains(self):
+        self.not_installed()
+        code, out = self.install("--update")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Run without --update to install Couchlink", out)
+        self.assertIsNone(self.stub_ran())
+
+    def test_local_without_the_files_explains(self):
+        self.lone_script()
+        code, out = self.install("--local")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Run without --local to download it", out)
+        self.assertIsNone(self.stub_ran())
+
     def test_release_marker_not_passed_on_to_the_tests(self):
         probe = os.path.join(self.root, "probe")
         with open(os.path.join(self.src, "test_couchlink.py"), "w") as f:
@@ -812,6 +856,95 @@ class InstallerTests(unittest.TestCase):
             self.assertIn(f'VERSION = "{couchlink.VERSION}"', f.read())
         # Logs stay inside the test root, so they never clash with a real install's.
         self.assertTrue(os.path.exists(os.path.join(self.root, "tmp/couchlink-check.log")))
+
+
+class SetupTests(unittest.TestCase):
+    """couchlink --setup, with scripted answers instead of a person."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.path = os.path.join(self.tmp, "config.toml")
+        shutil.copy(os.path.join(HERE, "couchlink.example.toml"), self.path)
+        self.output = []
+        self.ssh_calls = []
+
+    def setup(self, answers, found_mac=None):
+        answers = list(answers)
+
+        def ask(question):
+            self.assertTrue(answers, f"unexpected question: {question}")
+            return answers.pop(0)
+        code = couchlink.run_setup(self.path, ask=ask, out=self.output.append,
+                                   mac_finder=lambda host: found_mac,
+                                   ssh_setup=lambda host, user, out: self.ssh_calls.append((host, user)))
+        self.assertEqual(answers, [], "not every answer was used")
+        settings, problems = couchlink.load_config(self.path)
+        self.assertEqual(problems, [])                   # no typos or broken TOML
+        return code, settings
+
+    def test_set_value_keeps_the_comment_in_its_column(self):
+        text = 'pc_host = "target-pc.local"          # REQUIRED: the address\n'
+        new = couchlink.set_config_value(text, "pc_host", "192.168.1.50")
+        self.assertTrue(new.startswith('pc_host = "192.168.1.50" '))
+        self.assertEqual(new.index("# REQUIRED: the address\n"), text.index("# REQUIRED"))
+
+    def test_set_value_switches_on_a_commented_key(self):
+        text = '# pi_address = "40:00"               # REQUIRED\n'
+        new = couchlink.set_config_value(text, "pi_address", "40:00")
+        self.assertTrue(new.startswith('pi_address = "40:00" '))
+        self.assertEqual(new.index("# REQUIRED\n"), text.index("# REQUIRED"))
+
+    def test_set_value_adds_a_missing_key(self):
+        self.assertEqual(couchlink.set_config_value("a = 1\n", "ssh_user", "deck"), 'a = 1\nssh_user = "deck"\n')
+
+    def test_setup_fills_in_the_pc_settings(self):
+        code, s = self.setup(["192.168.1.50", "", "", "2", "n"], found_mac="aa:bb:cc:dd:ee:01")
+        self.assertEqual(code, 0)
+        self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
+                         ("192.168.1.50", "aa:bb:cc:dd:ee:01", "deck", "standby"))
+        self.assertTrue(os.path.exists(self.path + ".bak"))
+        self.assertEqual(self.ssh_calls, [])
+        text = "\n".join(self.output)
+        self.assertIn("Found aa:bb:cc:dd:ee:01", text)
+        self.assertIn("Still to do", text)               # the CEC addresses
+        self.assertIn("pi_address", text)
+        with open(self.path) as f:
+            self.assertIn("# REQUIRED: the PC's IP address", f.read())
+
+    def test_setup_asks_again_after_a_bad_answer(self):
+        code, s = self.setup(["", "target-pc.local", "192.168.1.50", "zz", "AA-BB-CC-DD-EE-02",
+                              "bazzite user", "gamer", "3", "1", "y"])
+        self.assertEqual(code, 0)
+        self.assertEqual((s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
+                         ("aa:bb:cc:dd:ee:02", "gamer", "nothing"))
+        self.assertEqual(self.ssh_calls, [("192.168.1.50", "gamer")])
+
+    def test_setup_offers_the_saved_values(self):
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "2", "n"])
+        code, s = self.setup(["", "", "", "", "n"])
+        self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
+                         ("192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "standby"))
+
+    def test_setup_keeps_a_switch_setting(self):
+        with open(self.path) as f:
+            text = f.read()
+        text = couchlink.set_config_value(text, "on_pc_sleep", "switch")
+        text = couchlink.set_config_value(text, "pc_sleep_switch_to", "11:00")
+        with open(self.path, "w") as f:
+            f.write(text)
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "n"])   # no sleep question
+        self.assertEqual((s["on_pc_sleep"], s["pc_sleep_switch_to"]), ("switch", "11:00"))
+
+    def test_setup_completes_a_config(self):
+        with open(self.path) as f:
+            text = f.read()
+        text = text.replace("pc_addresses = []", 'pc_addresses = ["12:00"]')
+        text = couchlink.set_config_value(text, "pi_address", "40:00")
+        with open(self.path, "w") as f:
+            f.write(text)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "1", "n"])
+        self.assertIn("The config is complete", "\n".join(self.output))
 
 
 class DocsTests(unittest.TestCase):

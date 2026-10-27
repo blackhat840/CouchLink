@@ -36,28 +36,33 @@ See [Installation](docs/installation.md#what-you-need) for details.
 
 ## Quick start
 
-On the Pi, plugged into the TV:
+On the Pi, plugged into the TV and logged in over SSH:
 
 ```bash
-sudo apt install -y git
-git clone https://github.com/blackhat840/Couchlink.git
-cd Couchlink
+curl -fsSLO https://raw.githubusercontent.com/blackhat840/CouchLink/main/install.sh
 sudo bash install.sh
 ```
 
+The installer downloads the latest release and sets everything up. No git or
+GitHub account needed. New to the Pi? Follow the
+[step by step guide](docs/installation.md#step-by-step).
+
 Then:
 
-1. Find your CEC addresses and fill in `/etc/couchlink/config.toml`. See
+1. Answer the installer's questions about the PC. To change them later, run
+   `sudo couchlink --setup`.
+2. Find your CEC addresses and add them to `/etc/couchlink/config.toml`. See
    [Configuration](docs/configuration.md).
-2. Set up the PC so the Pi can wake it and put it to sleep. See
+3. Set up the PC so the Pi can wake it and put it to sleep. See
    [Preparing the PC](docs/preparing-the-pc.md).
-3. Try a dry run, then go live. See
+4. Try a dry run, then go live. See
    [Installation](docs/installation.md#testing-with-a-dry-run).
 
 ## Updating
 
+On the Pi, in the folder that holds `install.sh`:
+
 ```bash
-cd Couchlink
 sudo bash install.sh --update
 ```
 

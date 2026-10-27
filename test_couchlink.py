@@ -1045,7 +1045,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(couchlink.set_config_value("a = 1\n", "ssh_user", "deck"), 'a = 1\nssh_user = "deck"\n')
 
     def test_setup_fills_in_the_pc_settings(self):
-        code, s = self.setup(["192.168.1.50", "", "", "", "", "2", "", "n"], found_mac="aa:bb:cc:dd:ee:01")
+        code, s = self.setup(["192.168.1.50", "", "", "", "", "2", "", "", "n"], found_mac="aa:bb:cc:dd:ee:01")
         self.assertEqual(code, 0)
         self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("192.168.1.50", "aa:bb:cc:dd:ee:01", "deck", "standby"))
@@ -1060,15 +1060,15 @@ class SetupTests(unittest.TestCase):
 
     def test_setup_asks_again_after_a_bad_answer(self):
         code, s = self.setup(["", "target-pc.local", "192.168.1.50", "zz", "AA-BB-CC-DD-EE-02",
-                              "bazzite user", "gamer", "", "", "3", "1", "", "y"])
+                              "bazzite user", "gamer", "", "", "3", "1", "", "", "y"])
         self.assertEqual(code, 0)
         self.assertEqual((s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("aa:bb:cc:dd:ee:02", "gamer", "nothing"))
         self.assertEqual(self.ssh_calls, [("192.168.1.50", "gamer")])
 
     def test_setup_offers_the_saved_values(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "", "", "2", "", "n"])
-        code, s = self.setup(["", "", "", "", "", "", "", "n"])
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "", "", "2", "", "", "n"])
+        code, s = self.setup(["", "", "", "", "", "", "", "", "n"])
         self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "standby"))
 
@@ -1079,7 +1079,7 @@ class SetupTests(unittest.TestCase):
         text = couchlink.set_config_value(text, "pc_sleep_switch_to", "11:00")
         with open(self.path, "w") as f:
             f.write(text)
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "", "n"])   # no sleep question
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "", "", "n"])   # no sleep question
         self.assertEqual((s["on_pc_sleep"], s["pc_sleep_switch_to"]), ("switch", "11:00"))
 
     def test_setup_completes_a_config(self):
@@ -1089,29 +1089,31 @@ class SetupTests(unittest.TestCase):
         text = couchlink.set_config_value(text, "pi_address", "40:00")
         with open(self.path, "w") as f:
             f.write(text)
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n"])
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "n"])
         self.assertIn("The config is complete", "\n".join(self.output))
 
     def test_setup_asks_for_name_wake_and_api_key(self):
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "Living Room PC", "2", "1", "y", "n"])
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "Living Room PC", "2", "1", "n", "y", "n"])
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
+        self.assertFalse(s["status_page_buttons"])
         key = next(line for line in self.output if line.startswith("New API key: ")).split(": ", 1)[1]
         self.assertEqual(s["api_key_hash"], couchlink.hash_api_key(key))
         with open(self.path) as f:
             self.assertNotIn(key, f.read())
-        code, s = self.setup(["", "", "", "", "", "", "", "n"])          # Enter keeps them all
+        code, s = self.setup(["", "", "", "", "", "", "", "", "n"])      # Enter keeps them all
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
+        self.assertFalse(s["status_page_buttons"])                    # Enter keeps "n" too
         self.assertEqual(s["api_key_hash"], couchlink.hash_api_key(key))
 
     def test_ssh_waits_for_a_sleeping_pc_to_wake(self):
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "y"], pc_awake=False)
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y", "y"], pc_awake=False)
         self.assertEqual(self.wake_calls, ["192.168.1.50"])
         self.assertEqual(self.service_calls, ["stop", "start"])     # paused so it isn't suspended again
         self.assertEqual(self.ssh_calls, [("192.168.1.50", "deck")])
         self.assertIn("doesn't answer", "\n".join(self.output))
 
     def test_ssh_skipped_when_the_pc_stays_asleep(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "y"], pc_awake=False, wakes=False)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y", "y"], pc_awake=False, wakes=False)
         self.assertEqual(self.ssh_calls, [])
         text = "\n".join(self.output)
         self.assertIn("needs the PC to be on", text)
@@ -1119,7 +1121,7 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn("The config is complete", text)
 
     def test_ssh_not_woken_if_declined(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "n"], pc_awake=False)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y", "n"], pc_awake=False)
         self.assertEqual((self.wake_calls, self.ssh_calls, self.service_calls), ([], [], []))
 
     def test_failed_ssh_is_not_called_complete(self):
@@ -1127,7 +1129,7 @@ class SetupTests(unittest.TestCase):
             text = f.read().replace("pc_addresses = []", 'pc_addresses = ["12:00"]')
         with open(self.path, "w") as f:
             f.write(couchlink.set_config_value(text, "pi_address", "40:00"))
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y"], ssh_works=False)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y"], ssh_works=False)
         text = "\n".join(self.output)
         self.assertIn("SSH to the PC doesn't work yet", text)
         self.assertNotIn("The config is complete", text)
@@ -1654,7 +1656,7 @@ class RemoteSessionTests(unittest.TestCase):
         return s
 
     def left(self, s):
-        return s.ctl.snapshot()["remote_session_seconds_left"]
+        return s.ctl.snapshot()["remote_session_seconds"]
 
     def tv_commands(self, s):
         return [c for c in s.act.cec if c != "pow 0"]  # power queries don't change the TV
@@ -1670,7 +1672,7 @@ class RemoteSessionTests(unittest.TestCase):
         self.assertEqual(s.act.suspends, 0)             # kept awake without the TV
         self.assertEqual(self.tv_commands(s), [])                 # TV not touched
         self.assertEqual(s.ctl.tv_input, "11:00")
-        self.assertAlmostEqual(self.left(s), 3 * 3600 - 5, delta=2)
+        self.assertAlmostEqual(self.left(s), 3600 + 5, delta=2)
 
     def test_session_retries_wol_then_gives_up(self):
         s = self.tv_elsewhere()
@@ -1679,13 +1681,12 @@ class RemoteSessionTests(unittest.TestCase):
         self.assertEqual(s.act.wols, s.cfg.max_wol_attempts)
         self.assertIsNone(self.left(s))                 # ended, not stuck waking
 
-    def test_wake_again_extends_session(self):
-        s = self.tv_elsewhere(remote_session_hours=1)
+    def test_wake_again_while_running(self):
+        s = self.tv_elsewhere()
         s.do("wake", tv=False)
         s.pc(True)
         s.run(1800)
-        s.do("wake", tv=False)
-        self.assertAlmostEqual(self.left(s), 3600, delta=2)
+        self.assertEqual(s.do("wake", tv=False)[1], "session_running")
         self.assertEqual(s.act.wols, 1)
 
     def test_pc_already_on_is_kept_awake(self):
@@ -1695,17 +1696,25 @@ class RemoteSessionTests(unittest.TestCase):
         self.assertEqual(s.act.wols, 0)
         self.assertEqual(s.act.suspends, 0)
 
-    def test_timeout_then_waits_away_debounce(self):
-        s = self.tv_elsewhere(remote_session_hours=0.1)
+    def test_no_timer_ends_a_long_session(self):
+        s = self.tv_elsewhere()
         s.do("wake", tv=False)
         s.pc(True)
-        s.run(359)
+        s.run(12 * 3600, step=10)                       # a very long game
+        self.assertIsNotNone(self.left(s))
         self.assertEqual(s.act.suspends, 0)
-        s.run(3)
-        self.assertIsNone(self.left(s))                 # ended
-        self.assertEqual(s.act.suspends, 0)             # not right away
-        s.run(s.cfg.away_debounce)
-        self.assertEqual(s.act.suspends, 1)
+
+    def test_pc_sleeping_by_itself_ends_it_and_it_stays_asleep(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(2 * 3600, step=10)
+        s.ev(("pc_power", "sleep"))                     # the PC's own sleep timer, after you stop playing
+        s.pc(False)
+        s.run(600)
+        self.assertIsNone(self.left(s))
+        self.assertEqual(s.act.wols, 1)
+        self.assertEqual(s.act.suspends, 0)
 
     def test_end_by_hand(self):
         s = self.tv_elsewhere()
@@ -1806,9 +1815,21 @@ class RemoteSessionTests(unittest.TestCase):
         self.assertIn("on 0", s.act.cec)
         self.assertTrue(s.ctl.snapshot()["tv_starting"])
 
-    def test_setting_must_be_positive(self):
-        _, problems = couchlink.validate(dict(BASE, remote_session_hours=0))
-        self.assertTrue(any("remote_session_hours" in p for p in problems))
+    def test_old_timer_setting_is_ignored_then_commented_out(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        path = os.path.join(d, "config.toml")
+        with open(os.path.join(HERE, "couchlink.example.toml")) as f:
+            text = f.read().replace("[timing]\n", "[timing]\nremote_session_hours = 4\n")
+        with open(path, "w") as f:
+            f.write(text)
+        _, problems = couchlink.load_config(path)
+        self.assertEqual(problems, [])                  # not reported as a typo
+        lines = []
+        couchlink.migrate_config(path, out=lines.append)
+        with open(path) as f:
+            self.assertIn("# remote_session_hours = 4", f.read())
+        self.assertTrue(any("no longer end on a timer" in line for line in lines))
 
 
 class ActionTests(unittest.TestCase):
@@ -1824,7 +1845,7 @@ class ActionTests(unittest.TestCase):
         s.run(60)
         self.assertEqual(s.do("sleep"), (True, "suspending", "Putting the PC to sleep"))
         self.assertEqual(s.act.suspends, 1)             # no away_debounce wait
-        self.assertIsNone(s.ctl.snapshot()["remote_session_seconds_left"])
+        self.assertIsNone(s.ctl.snapshot()["remote_session_seconds"])
 
     def test_sleep_on_screen_runs_on_pc_sleep(self):
         s = Sim(**REAL)                                 # on_pc_sleep = "switch" to 11:00
@@ -2048,6 +2069,37 @@ class ApiTests(unittest.TestCase):
         status, body = self.post("/api/wake", b'{"tv": false}', Origin=f"http://127.0.0.1:{self.port}",
                                  Sec_Fetch_Site="same-origin")
         self.assertEqual(status, 200)
+
+    def page_headers(self):
+        return {"Origin": f"http://127.0.0.1:{self.port}", "Sec_Fetch_Site": "same-origin"}
+
+    def test_status_page_needs_no_key(self):
+        self.start(keyed=False)                                     # works even with no key at all
+        status, body = self.post("/api/wake", b'{"tv": false}', key=None, **self.page_headers())
+        self.assertEqual((status, body["result"]), (200, "session_started"))
+        self.assertTrue(any("Wake PC requested from 127.0.0.1 (status page)" in line
+                            for line in couchlink.LOG_RING))
+
+    def test_status_page_buttons_can_be_turned_off(self):
+        self.start(status_page_buttons=False)
+        status, body = self.post("/api/wake", b'{"tv": false}', key=None, **self.page_headers())
+        self.assertEqual((status, body["result"]), (403, "buttons_off"))
+        status, body = self.post("/api/wake", b'{"tv": false}')    # scripts with the key still work
+        self.assertEqual(status, 200)
+
+    def test_scripts_still_need_the_key(self):
+        self.start(keyed=False)
+        status, body = self.post("/api/wake", b'{"tv": false}', key=None)
+        self.assertEqual((status, body["result"]), (403, "actions_off"))
+        self.assertEqual(self.sim.act.wols, 0)
+
+    def test_from_status_page(self):
+        f = couchlink.from_status_page
+        self.assertTrue(f({"Sec-Fetch-Site": "same-origin"}))
+        self.assertTrue(f({"Origin": "http://couchlink.local:8080", "Host": "couchlink.local:8080"}))
+        self.assertFalse(f({"Origin": "http://evil.example", "Host": "couchlink.local:8080"}))
+        self.assertFalse(f({"Origin": "null", "Host": "couchlink.local:8080"}))
+        self.assertFalse(f({"Host": "couchlink.local:8080"}))       # curl and most scripts
 
     def test_unknown_path_and_get_stays_read_only(self):
         self.start()

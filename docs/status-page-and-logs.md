@@ -40,20 +40,10 @@ login, so keep the page on a trusted network.
 
 ## Wake and sleep buttons
 
-The status page can wake the PC and put it to sleep. The buttons and the API
-behind them need an API key, and are off until you generate one:
-
-```bash
-sudo couchlink --new-api-key
-sudo systemctl restart couchlink
-```
-
-It prints the key once. Copy it somewhere safe, such as a password manager.
-Only a hash of the key is saved in the config, so it can't be shown again.
-Running the command again generates a new key, and the old one stops working.
-
-The status page asks for the key once on each phone or computer and
-remembers it there. "Forget the key on this device" removes it.
+The status page can wake the PC and put it to sleep, with buttons under the
+TV and PC path. They need no key or password. Anyone who can open the status
+page can use them, so keep the Pi on a network you trust. To turn them off, set
+`status_page_buttons = false`.
 
 Each button shows only when it would do something:
 
@@ -69,7 +59,17 @@ In a dry run, the buttons only log what they would do.
 ## API
 
 The buttons use these requests. Scripts, phone shortcuts and Home Assistant
-can use them too.
+can use them too, with an API key. Generate one with:
+
+```bash
+sudo couchlink --new-api-key
+sudo systemctl restart couchlink
+```
+
+It prints the key once. Copy it somewhere safe, such as a password manager.
+Only a hash of the key is saved in the config, so it can't be shown again.
+Running the command again generates a new key, and the old one stops working
+once CouchLink restarts. `sudo bash install.sh --setup` can also generate one.
 
 | Request | Does |
 |---|---|
@@ -78,7 +78,7 @@ can use them too.
 | `POST /api/sleep` | Put PC to sleep |
 | `POST /api/session/end` | End remote session |
 
-Send the key in an `Authorization` header. The body is optional, and when there
+Scripts send the key in an `Authorization` header. The body is optional, and when there
 is one it must be a JSON object:
 
 ```bash
@@ -93,7 +93,7 @@ Each answer is JSON, such as:
 
 | `result` | Meaning |
 |---|---|
-| `session_started`, `session_extended` | Wake PC started a remote session, or reset its time |
+| `session_started`, `session_running` | Wake PC started a remote session, or one was already running |
 | `not_needed` | Wake PC did nothing, because the TV is on the PC |
 | `waking_pc_and_tv` | Wake PC and TV is under way |
 | `suspending` | The PC is being put to sleep |
@@ -102,12 +102,18 @@ Each answer is JSON, such as:
 | `too_soon` | HTTP 429. Only one wake, and one sleep, is accepted every 10 seconds |
 | `bad_key` | HTTP 401. The key is missing or wrong |
 | `locked_out` | HTTP 429. 5 wrong keys from one address lock it out for a minute |
-| `actions_off` | HTTP 403. No API key has been generated yet |
+| `actions_off` | HTTP 403. A script sent a request, but no API key has been generated yet |
+| `buttons_off` | HTTP 403. The status page's buttons are off (`status_page_buttons = false`) |
 | `refused` | HTTP 403. The request came from a page on another web site |
 
 `GET /api` only reads, and needs no key. Every request is logged with the
-address it came from, for example `[ACTION] Wake PC requested from 192.168.1.20`.
-Wrong keys are logged as warnings.
+address it came from, for example `[ACTION] Wake PC requested from 192.168.1.20`,
+with `(status page)` added for the buttons. Wrong keys are logged as warnings.
+
+The status page is told apart from scripts by headers that browsers add to
+the page's own requests. Other web sites can't fake them, so a page elsewhere
+can't press the buttons from your browser. A program on your network could
+fake them, which is why the network is what protects the buttons.
 
 CouchLink serves plain HTTP, so the key crosses the network unencrypted. On a
 home network that is usually fine. To reach the Pi from outside the home, use a

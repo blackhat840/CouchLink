@@ -93,8 +93,10 @@ sudo bash install.sh --setup
 - a name for the PC on the status page
 - what to do when the PC wakes by itself, for example from a controller
 - what to do when the PC goes to sleep by itself
-- whether to generate an [API key](status-page-and-logs.md#wake-and-sleep-buttons)
-  for the wake and sleep buttons
+- whether to show the [wake and sleep buttons](status-page-and-logs.md#wake-and-sleep-buttons)
+  on the status page
+- whether to generate an [API key](status-page-and-logs.md#api) for scripts
+  and Home Assistant
 
 Then it offers to set up the SSH key (step 5 of
 [Preparing the PC](preparing-the-pc.md)). If the PC is asleep, it offers to
@@ -212,7 +214,8 @@ seconds.
 | `hid_passthrough` | `true` | Forward TV remote buttons to the PC as a USB keyboard. Needs the `--with-hid` install. |
 | `hidg_device` | `"/dev/hidg0"` | The USB keyboard device. |
 | `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
-| `api_key_hash` | unset | Set by `sudo couchlink --new-api-key`. Turns on the wake and sleep buttons and the API, and holds a hash of the key they need. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
+| `status_page_buttons` | `true` | Wake and sleep buttons on the status page. They need no key, so anyone who can open the page can use them. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
+| `api_key_hash` | unset | Set by `sudo couchlink --new-api-key`. Lets scripts and Home Assistant use the API, and holds a hash of the key they send. See [API](status-page-and-logs.md#api). |
 
 ### Timing
 
@@ -228,7 +231,6 @@ seconds.
 | `guard_delay` | `1.5` | Pause before undoing an automatic switch. |
 | `max_guard_recoveries` | `2` | Automatic switches undone per wake. |
 | `auto_switch_cooldown` | `30` | Minimum time between switching the TV to the PC on its own. |
-| `remote_session_hours` | `4` | How long a remote session keeps the PC awake without the TV. See [How it works](how-it-works.md#remote-sessions). |
 | `tv_boot_timeout` | `20` | When the PC wakes with the TV off: how long to wait for the TV to report that it is on before switching it to the PC anyway. |
 | `tv_boot_reclaims` | `3` | After the TV reports that it is on, how many more times to claim the PC's input. |
 | `tv_boot_reclaim_interval` | `2` | Time between those claims. Input changes in this period are undone. |

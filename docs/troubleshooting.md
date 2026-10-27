@@ -23,8 +23,8 @@ Common problems, what to check, and the known limitations.
 | The PC is suspended while you use it | Check the log for the input that was announced just before. If it came from the soundbar or another device, `ignore_announcements_from` or `guard_addresses` may help. |
 | The TV switches away after the PC wakes | Look for `RECOVER` lines. If they appear but the TV does not come back, your TV may ignore the Pi's Active Source messages. |
 | The TV is slow to switch to the PC after a controller wake | Look for `TV reports that it is on`. If the log shows `did not report that it is on` instead, your TV does not answer power queries while it starts. Lower `tv_boot_timeout`. |
-| The status page has no wake and sleep buttons | Generate an API key with `sudo couchlink --new-api-key`, then `sudo systemctl restart couchlink`. |
-| The buttons say `Wrong API key` | The page asks for the key again. If you lost it, generate a new one with `sudo couchlink --new-api-key`. |
+| The status page has no wake and sleep buttons | Check that `status_page_buttons` isn't set to `false`, and that the Pi runs 2.6 or newer. |
+| A script gets `Wrong API key` after you generated a new one | Generating a key replaces the old one, once CouchLink restarts. Update the key in the script. |
 | The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
 | The TV turns on when you wake the PC to stream | The PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. |
 | The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. |
@@ -56,9 +56,9 @@ Common problems, what to check, and the known limitations.
   such as with Moonlight's own Wake-on-LAN, looks the same as a controller
   wake, so the TV turns on.
 - **Security.** The Pi holds an SSH key that can log in to the PC. The sudoers
-  rule limits it to the suspend command. The wake and sleep actions need the
-  API key, but the read-only status page has no login, and CouchLink serves
-  plain HTTP. Keep the Pi on a trusted network, and use a VPN to reach it from
+  rule limits it to the suspend command. The status page and its wake and sleep
+  buttons have no login, scripts need the API key, and CouchLink serves plain
+  HTTP. Keep the Pi on a trusted network, and use a VPN to reach it from
   outside the home.
 
 ---

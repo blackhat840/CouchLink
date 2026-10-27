@@ -390,6 +390,9 @@ class FlowTests(unittest.TestCase):
         self.assertIsNone(couchlink.parse_rx("NOTICE: connected"))
         self.assertEqual(couchlink.parse_key("DEBUG: key pressed: fast forward (49)"), "fast forward")
 
+    def test_version_matches_docstring(self):
+        self.assertIn(f"Couchlink {couchlink.VERSION}\n", couchlink.__doc__)
+
     def test_status_page_links_to_repo(self):
         self.assertIn('href="https://github.com/blackhat840/CouchLink"', couchlink.DASHBOARD_HTML)
 

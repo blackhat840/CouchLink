@@ -83,7 +83,7 @@ of these:
 | Switch to another input | The new input, then about 5 seconds later `Would run: ssh deck@192.168.1.50 sudo -n systemctl suspend` |
 | Turn the TV off | `Standby broadcast from the TV`, then a suspend |
 | Turn only the soundbar off | `Standby from audio system (5)`, `TV power status: on`, and no suspend |
-| Put the PC to sleep from its own menu | `PC dropped off while on screen`, then about 12 seconds later the `on_pc_sleep` action |
+| Put the PC to sleep from its own menu | `PC went offline while on screen`, then about 12 seconds later the `on_pc_sleep` action |
 
 A dry run does not send the commands that pull the TV back to the PC, so
 automatic input switches will not be undone during it. That only works live.

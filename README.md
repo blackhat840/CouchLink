@@ -62,7 +62,9 @@ when the PC turns on by itself.
   off. It waits a few seconds first, so flipping past the PC's input on the
   way to another one does not count.
 - **Switches the TV to the PC** when the PC wakes up on its own, for example
-  from a controller or the power button. Turns the TV on first if needed.
+  from a controller or the power button. If the TV is off, Couchlink turns it
+  on, waits for it to report that it is on, then claims the PC's input a few
+  more times while the TV finishes starting.
 - **Handles Sleep from the Steam menu.** When the PC goes to sleep by itself,
   Couchlink can switch the TV to another input, turn the TV off, or leave it
   alone. It never wakes the PC back up.
@@ -568,6 +570,9 @@ seconds.
 | `guard_delay` | `1.5` | Pause before undoing an automatic switch. |
 | `max_guard_recoveries` | `2` | Automatic switches undone per wake. |
 | `auto_switch_cooldown` | `30` | Minimum time between switching the TV to the PC on its own. |
+| `tv_boot_timeout` | `20` | When the PC wakes with the TV off: how long to wait for the TV to report that it is on before switching it to the PC anyway. |
+| `tv_boot_reclaims` | `3` | After the TV reports that it is on, how many more times to claim the PC's input. |
+| `tv_boot_reclaim_interval` | `2` | Time between those claims. Input changes in this period are undone. |
 | `pc_sleep_confirm` | `12` | How long the PC must stay offline before it counts as asleep. Stops Wi-Fi hiccups from triggering `on_pc_sleep`. |
 | `power_poll_interval` | `60` | How often to ask the TV whether it is on. `0` asks only at startup. |
 | `power_query_delays` | `[2, 8]` | When to ask the TV after another device sends standby. |
@@ -640,6 +645,7 @@ login, so keep the page on a trusted network.
 | Suspend stops working after a SteamOS update | Check that `/etc/sudoers.d/zzz-cec-suspend` and sshd survived the update. |
 | The PC is suspended while you use it | Check the log for the input that was announced just before. If it came from the soundbar or another device, `ignore_announcements_from` or `guard_addresses` may help. |
 | The TV switches away after the PC wakes | Look for `RECOVER` lines. If they appear but the TV does not come back, your TV may ignore the Pi's Active Source messages. |
+| The TV takes long to switch to the PC after a controller wake | Look for `TV reports that it is on`. If the log shows `did not report that it is on` instead, your TV does not answer power queries while it starts. Lower `tv_boot_timeout`. |
 | Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 644 <file> /etc/couchlink/config.toml`. |
 
 ## Known limitations
@@ -652,6 +658,9 @@ login, so keep the page on a trusted network.
 - **The Pi speaks for the PC.** It announces itself as the active source at
   the PC's address. Some TVs ignore that. If yours does, automatic switching
   to the PC will not work, but waking and suspending will.
+- **The Pi's own input is never kept while the PC is awake.** If the TV
+  switches to the Pi's input while the PC is on screen, Couchlink switches it
+  back. To look at the Pi's own screen, stop `couchlink.service` first.
 - **A PC restart looks like going to sleep.** If the PC is offline for longer
   than `pc_sleep_confirm`, the `on_pc_sleep` action runs. When the PC comes
   back, the TV switches back to it.

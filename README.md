@@ -1,4 +1,4 @@
-# Couchlink
+# CouchLink
 
 Make a SteamOS or Bazzite gaming PC behave like a console on your TV.
 
@@ -6,7 +6,7 @@ A Raspberry Pi on the TV's HDMI-CEC bus keeps the PC and the TV in sync. It
 works with SteamOS, Bazzite and any other Linux PC that uses systemd. Nothing
 is installed on the PC.
 
-![The Couchlink status page with the PC online on HDMI 1.2](docs/dashboard.png)
+![The CouchLink status page with the PC online on HDMI 1.2](docs/dashboard.png)
 
 ## What it does
 
@@ -16,7 +16,7 @@ is installed on the PC.
   off.
 - **Switches the TV to the PC** when the PC wakes up on its own, for example
   from a controller. It turns the TV on first if needed.
-- **Handles Sleep from the Steam menu.** Couchlink can switch the TV to another
+- **Handles Sleep from the Steam menu.** CouchLink can switch the TV to another
   input, turn it off, or leave it alone.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
@@ -82,7 +82,7 @@ This installs the latest release from GitHub and keeps your config. See
 
 ## Project status
 
-Couchlink is a work in progress. It has been checked on the hardware in
+CouchLink is a work in progress. It has been checked on the hardware in
 [Hardware and systems](docs/hardware.md), and its logic is covered by offline
 tests. CEC behavior varies a lot between brands, so expect to spend some time
 with the dry run on your own TV. Reports from other setups are welcome as
@@ -94,7 +94,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-Couchlink is free software, released under the GNU General Public License,
+CouchLink is free software, released under the GNU General Public License,
 version 3 or later. See [LICENSE](LICENSE) for the full text. It is an
 independent project and is not affiliated with any of the companies named in
 it. See [Credits](docs/credits.md#trademarks).

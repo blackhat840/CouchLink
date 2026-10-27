@@ -1,15 +1,15 @@
-# Couchlink documentation
+# CouchLink documentation
 
 | Guide | What it covers |
 |---|---|
 | [Installation](installation.md) | What you need, installing on the Pi, the dry run, going live and updating |
 | [Preparing the PC](preparing-the-pc.md) | SSH, the suspend rule and waking, on SteamOS and Bazzite |
 | [Configuration](configuration.md) | Finding your CEC addresses, the config file and every setting |
-| [Status page and logs](status-page-and-logs.md) | Following what Couchlink does |
+| [Status page and logs](status-page-and-logs.md) | Following what CouchLink does |
 | [Troubleshooting](troubleshooting.md) | Common problems and known limitations |
-| [How it works](how-it-works.md) | The layout, the rule Couchlink enforces and the CEC messages it reads |
+| [How it works](how-it-works.md) | The layout, the rule CouchLink enforces and the CEC messages it reads |
 | [Hardware and systems](hardware.md) | Supported PC systems and tested TVs and soundbars |
-| [Credits](credits.md) | Projects Couchlink builds on, related projects and trademarks |
+| [Credits](credits.md) | Projects CouchLink builds on, related projects and trademarks |
 
 ## Files in this repository
 

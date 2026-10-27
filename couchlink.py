@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-Couchlink 2.4
+CouchLink 2.4
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -108,7 +108,7 @@ DEFAULTS = {
 
     # diagnostics
     "raw_debug": True,
-    "cec_client_command": ["cec-client", "-d", "8", "-o", "Couchlink"],  # -o: name the TV shows for the Pi
+    "cec_client_command": ["cec-client", "-d", "8", "-o", "CouchLink"],  # -o: name the TV shows for the Pi
 }
 
 KEYCODES = {
@@ -1019,7 +1019,7 @@ DASHBOARD_HTML = r'''<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#070a12">
-<title>Couchlink</title>
+<title>CouchLink</title>
 <style>
 :root {
   --bg: #070a12;
@@ -1230,7 +1230,7 @@ footer a { color: var(--muted); }
         <path d="M15 22.5h6M18 19.5v6" stroke="url(#g)" stroke-width="2.6" stroke-linecap="round"/>
         <circle cx="29" cy="21" r="1.9" fill="url(#g)"/><circle cx="33.5" cy="25" r="1.9" fill="url(#g)"/>
       </svg>
-      <span class="word">Couchlink</span>
+      <span class="word">CouchLink</span>
     </div>
     <span class="chip" id="version">v-</span>
     <span class="chip dry" id="dry" hidden>Dry run</span>
@@ -1249,7 +1249,7 @@ footer a { color: var(--muted); }
     <div>
       <div class="kicker" id="kicker">Gaming PC</div>
       <div class="state" id="state">Connecting</div>
-      <div class="sub" id="sub"><span class="muted">Waiting for Couchlink</span></div>
+      <div class="sub" id="sub"><span class="muted">Waiting for CouchLink</span></div>
       <div class="path" aria-label="Signal path">
         <span class="node" id="nTv"><span class="led"></span>TV</span>
         <span class="link" id="l1"></span>
@@ -1283,7 +1283,7 @@ footer a { color: var(--muted); }
     <span id="updated">Not updated yet</span>
     <span>Refreshes every 2 seconds</span>
     <a href="/api">Raw JSON</a>
-    <a href="https://github.com/blackhat840/CouchLink" target="_blank" rel="noopener">Couchlink on GitHub</a>
+    <a href="https://github.com/blackhat840/CouchLink" target="_blank" rel="noopener">CouchLink on GitHub</a>
   </footer>
 </div>
 
@@ -1325,7 +1325,7 @@ footer a { color: var(--muted); }
     document.body.setAttribute("data-state", v[0]);
     $("state").textContent = v[1];
     $("kicker").textContent = d.pc_name || "Gaming PC";
-    document.title = (d.pc_name ? d.pc_name + " | " : "") + "Couchlink";
+    document.title = (d.pc_name ? d.pc_name + " | " : "") + "CouchLink";
     var sub = $("sub");
     sub.textContent = "";
     sub.appendChild(document.createTextNode(v[2]));
@@ -1445,7 +1445,7 @@ footer a { color: var(--muted); }
     $("liveText").textContent = ok ? "Live" : "Offline";
     if (!ok && !last) {
       $("state").textContent = "No connection";
-      $("sub").textContent = "Couchlink is not answering";
+      $("sub").textContent = "CouchLink is not answering";
     }
   }
 
@@ -1462,6 +1462,24 @@ footer a { color: var(--muted); }
 </body>
 </html>
 '''
+
+
+def own_address(toward):
+    """The Pi's IP address on the route to another host, or None. Nothing is sent."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect((toward, 9))
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def status_page_urls(port, ip, hostname):
+    """Where to open the status page, best first."""
+    urls = [f"http://{ip}:{port}"] if ip else []
+    if hostname:
+        urls.append(f"http://{hostname}.local:{port}")
+    return urls or [f"http://<pi-address>:{port}"]
 
 
 def start_dashboard(port, controller):
@@ -1494,7 +1512,8 @@ def start_dashboard(port, controller):
         log("STARTUP", f"Status page disabled, port {port} unavailable: {e}", level="WARN")
         return
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    log("STARTUP", f"Status page on http://<pi-ip>:{port}")
+    urls = status_page_urls(port, own_address(controller.cfg.pc_host), socket.gethostname())
+    log("STARTUP", f"Status page on {' or '.join(urls)}")
 
 
 # --------------------------------------------------------------------------
@@ -1576,7 +1595,7 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
         value = current.get(key)
         return value if isinstance(value, str) and value.lower() not in PLACEHOLDERS else None
 
-    out("Couchlink setup. Press Enter to keep the value in brackets.")
+    out("CouchLink setup. Press Enter to keep the value in brackets.")
     out("")
     out("The PC's IP address. Reserve it in your router so it never changes.")
     host = prompt("PC IP address", known("pc_host"),
@@ -1653,7 +1672,7 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
 # --------------------------------------------------------------------------
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description="Couchlink: keep a gaming PC's power state in line with the TV over HDMI-CEC")
+    ap = argparse.ArgumentParser(description="CouchLink: keep a gaming PC's power state in line with the TV over HDMI-CEC")
     ap.add_argument("--config", default=DEFAULT_CONFIG_PATH, help=f"config file (default {DEFAULT_CONFIG_PATH})")
     ap.add_argument("--dry-run", action="store_true",
                     help="watch the bus and log decisions without waking, suspending or switching anything")
@@ -1693,9 +1712,9 @@ def main(argv=None):
         sys.exit(EX_CONFIG)
     actions = (DryRunActions if args.dry_run else RealActions)(cfg, cec, events)
     ctl = Controller(cfg, actions)
-    log("STARTUP", f"Couchlink {VERSION}{' DRY RUN' if args.dry_run else ''} starting. "
+    log("STARTUP", f"CouchLink {VERSION}{' DRY RUN' if args.dry_run else ''} starting. "
                    f"PC input: {', '.join(ctl.input_name(a) for a in cfg.pc_addresses)}, "
-                   f"Pi: {ctl.input_name(cfg.pi_address)}, host: {cfg.pc_host}")
+                   f"Pi: {ctl.input_name(cfg.pi_address)}, PC address: {cfg.pc_host}")
     threading.Thread(target=pinger, args=(cfg, events), daemon=True).start()
     if cfg.dashboard_port:
         start_dashboard(cfg.dashboard_port, ctl)
@@ -1708,12 +1727,12 @@ def main(argv=None):
             event = None
         if event is not None:
             if event[0] == "cec_exit":
-                log("STARTUP", f"cec-client exited with code {event[1]}. Exiting so systemd restarts Couchlink",
+                log("STARTUP", f"cec-client exited with code {event[1]}. Exiting so systemd restarts CouchLink",
                     level="ERROR")
                 sys.exit(1)
             try:
                 ctl.handle(event)
-            except Exception as e:      # one bad message must not stop Couchlink
+            except Exception as e:      # one bad message must not stop CouchLink
                 log("CONTROL", f"Error handling {event[0]} event: {e!r}", level="ERROR")
         if time.monotonic() - last_tick >= min(cfg.tick_interval, 0.25) or event is not None:
             last_tick = time.monotonic()

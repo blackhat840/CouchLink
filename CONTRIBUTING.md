@@ -1,4 +1,4 @@
-# Contributing to Couchlink
+# Contributing to CouchLink
 
 These rules apply to everyone who changes this repository, people and AI
 assistants alike.

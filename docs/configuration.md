@@ -6,7 +6,7 @@ Finding your CEC addresses, editing the config file, and every setting.
 
 Every HDMI device has a physical address that describes where it is plugged
 in. A device on TV input 2 is `2.0.0.0`. A device on input 1 of a soundbar
-that is itself on TV input 1 is `1.1.0.0`. Couchlink accepts either `1.1.0.0` or
+that is itself on TV input 1 is `1.1.0.0`. CouchLink accepts either `1.1.0.0` or
 the short form `11:00`.
 
 **Step 1: scan the bus.**
@@ -101,7 +101,7 @@ Check it after every change:
 sudo couchlink --check-config
 ```
 
-It prints every setting with the value Couchlink will use, or a list of what is
+It prints every setting with the value CouchLink will use, or a list of what is
 wrong. Misspelled setting names are reported too.
 
 Section names such as `[pc]` are only there for readability. Each section may
@@ -118,7 +118,7 @@ seconds.
 |---|---|---|
 | `pc_host` | required | The PC's IP address or hostname. An IP with a DHCP reservation is the most reliable. |
 | `pc_mac` | required | MAC address of the network card that receives Wake-on-LAN. |
-| `pc_name` | unset | Name shown on the status page. If unset, Couchlink asks the PC for its hostname over SSH, then tries reverse DNS. |
+| `pc_name` | unset | Name shown on the status page. If unset, CouchLink asks the PC for its hostname over SSH, then tries reverse DNS. |
 | `ssh_user` | `"deck"` | The user the Pi logs in as. Correct for SteamOS. On Bazzite and others, set your own username. |
 | `suspend_command` | `"sudo -n systemctl suspend"` | The command run on the PC to put it to sleep. |
 | `wol_broadcast` | `"255.255.255.255"` | Where the Wake-on-LAN packet is sent. Try your subnet broadcast, such as `"192.168.1.255"`, if waking is unreliable. |
@@ -160,7 +160,7 @@ seconds.
 | `max_suspend_attempts` | `4` | Suspend attempts before giving up and logging an error. |
 | `wol_retry_interval` | `10` | Time between Wake-on-LAN packets. |
 | `max_wol_attempts` | `6` | Wake-on-LAN packets before giving up. |
-| `wake_correlation` | `45` | If the PC comes online this soon after a Wake-on-LAN packet, Couchlink treats it as its own wake. |
+| `wake_correlation` | `45` | If the PC comes online this soon after a Wake-on-LAN packet, CouchLink treats it as its own wake. |
 | `guard_window` | `15` | How long after a wake an automatic input switch gets undone. |
 | `guard_delay` | `1.5` | Pause before undoing an automatic switch. |
 | `max_guard_recoveries` | `2` | Automatic switches undone per wake. |
@@ -172,14 +172,14 @@ seconds.
 | `power_poll_interval` | `60` | How often to ask the TV whether it is on. `0` asks only at startup. |
 | `power_query_delays` | `[2, 8]` | When to ask the TV after another device sends standby. |
 | `ping_interval` | `3` | How often to check whether the PC is reachable. |
-| `tick_interval` | `1` | How often Couchlink re-checks its rules. |
+| `tick_interval` | `1` | How often CouchLink re-checks its rules. |
 
 ### Diagnostics
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `raw_debug` | `true` | Log every raw CEC message. Turn off once everything works. |
-| `cec_client_command` | `["cec-client", "-d", "8", "-o", "Couchlink"]` | How `cec-client` is started. `-o` sets the name the TV shows for the Pi. |
+| `cec_client_command` | `["cec-client", "-d", "8", "-o", "CouchLink"]` | How `cec-client` is started. `-o` sets the name the TV shows for the Pi. |
 
 ---
 

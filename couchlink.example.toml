@@ -1,4 +1,4 @@
-# Couchlink settings.
+# CouchLink settings.
 #
 # The installer copies this file to /etc/couchlink/config.toml. Fill in the
 # values marked REQUIRED, then check the file with:
@@ -12,7 +12,7 @@
 [pc]
 pc_host = "target-pc.local"          # REQUIRED: the PC's IP address (reserve it in your router)
 pc_mac  = "AA:BB:CC:DD:EE:FF"        # REQUIRED: MAC of the network card that receives Wake-on-LAN
-# pc_name = "Living Room PC"         # name on the status page; if unset, Couchlink asks the PC for its hostname
+# pc_name = "Living Room PC"         # name on the status page; if unset, CouchLink asks the PC for its hostname
 ssh_user = "deck"                    # deck on SteamOS. On Bazzite and others, your own username
 suspend_command = "sudo -n systemctl suspend"
 # wol_broadcast = "192.168.1.255"    # try your subnet broadcast if waking is unreliable
@@ -23,7 +23,7 @@ suspend_command = "sudo -n systemctl suspend"
 # The PC is not a CEC device, so watch the bus while switching to it by hand
 # (see "Finding your CEC addresses" in docs/configuration.md).
 #
-# Example layout (the one Couchlink was built on):
+# Example layout (the one CouchLink was built on):
 #   TV HDMI 1 (ARC) -> soundbar               soundbar_address = "10:00"
 #     soundbar HDMI 1 -> streaming box        "11:00"
 #     soundbar HDMI 2 -> PC                   pc_addresses = ["12:00"]

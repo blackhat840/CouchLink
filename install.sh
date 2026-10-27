@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Couchlink installer and updater for Raspberry Pi OS.
+# CouchLink installer and updater for Raspberry Pi OS.
 #
 # install.sh works on its own. If couchlink.py is not next to it, it downloads
 # the latest release from GitHub and installs that:
@@ -167,7 +167,7 @@ CHECK_LOG="$LOG_DIR/couchlink-check.log"
 if [ "$LIST" = 1 ]; then
     OUT="$(release_tool list)" || exit 1
     [ -n "$OUT" ] || die "No releases found"
-    say "Couchlink releases (newest first)"
+    say "CouchLink releases (newest first)"
     printf '%s\n' "$OUT" | while IFS=$'\t' read -r tag date name pre; do
         printf '  %-10s %s  %s %s\n' "$tag" "$date" "$name" "$pre"
     done
@@ -187,10 +187,10 @@ fi
 
 if [ "$REMOTE" = 1 ]; then
     if [ "$UPDATE" = 1 ] && [ "$INSTALLED" = 0 ]; then
-        die "No existing install found. Run without --update to install Couchlink."
+        die "No existing install found. Run without --update to install CouchLink."
     fi
     if [ "$UPDATE" = 0 ] && [ "$INSTALLED" = 1 ]; then
-        say "Couchlink is already installed, so this updates it"
+        say "CouchLink is already installed, so this updates it"
         UPDATE=1
     fi
     [ "$INSTALLED" = 0 ] || OLD_VER="$(version_of "$BIN")"
@@ -200,7 +200,7 @@ if [ "$REMOTE" = 1 ]; then
         OUT="$(release_tool list)" || exit 1
         [ -n "$OUT" ] || die "No releases found"
         mapfile -t TAGS < <(printf '%s\n' "$OUT" | cut -f1)
-        say "Couchlink releases (installed: ${OLD_VER:-none})"
+        say "CouchLink releases (installed: ${OLD_VER:-none})"
         i=1
         printf '%s\n' "$OUT" | while IFS=$'\t' read -r tag date name pre; do
             printf '  %2d) %-10s %s  %s %s\n' "$i" "$tag" "$date" "$name" "$pre"
@@ -216,7 +216,7 @@ if [ "$REMOTE" = 1 ]; then
     CMP=1
     [ "$INSTALLED" = 0 ] || CMP="$(release_tool cmp "$RELEASE" "${OLD_VER:-0}")"
     if [ "$CMP" = 0 ] && [ "$LATEST" = 1 ]; then
-        say "Couchlink ${OLD_VER} is already the latest release ($RELEASE). Nothing to do."
+        say "CouchLink ${OLD_VER} is already the latest release ($RELEASE). Nothing to do."
         exit 0
     fi
     if [ "$CMP" = -1 ]; then
@@ -226,7 +226,7 @@ if [ "$REMOTE" = 1 ]; then
     fi
     TMP="$(mktemp -d)"
     trap 'rm -rf "$TMP"' EXIT
-    say "Downloading Couchlink $RELEASE from GitHub"
+    say "Downloading CouchLink $RELEASE from GitHub"
     SRC="$(release_tool fetch "$RELEASE" "$TMP")" || exit 1
     ARGS=()
     [ "$UPDATE" = 0 ] || ARGS+=(--update)
@@ -245,7 +245,7 @@ if [ "$UPDATE" = 1 ]; then
     if [ "$TEST_MODE" != 1 ]; then
         command -v cec-client >/dev/null || die "cec-client is missing. Run without --update to reinstall packages."
     fi
-    say "Updating Couchlink ${OLD_VER:-?} -> ${NEW_VER:-?}${RELEASE_TAG:+ (release $RELEASE_TAG)}"
+    say "Updating CouchLink ${OLD_VER:-?} -> ${NEW_VER:-?}${RELEASE_TAG:+ (release $RELEASE_TAG)}"
 fi
 
 # ---------------------------------------------------------------- python
@@ -290,7 +290,7 @@ if [ "$UPDATE" = 1 ]; then
 fi
 
 # ---------------------------------------------------------------- program
-say "Installing Couchlink"
+say "Installing CouchLink"
 install -d "$ROOT/usr/local/bin" "$CONF_DIR" "$UNIT_DIR"
 install -m 0755 "$HERE/couchlink.py" "$BIN"
 echo "Installed $BIN (${NEW_VER:-unknown version})"
@@ -308,7 +308,7 @@ SERVICE_FILE="$UNIT_DIR/couchlink.service"
 SERVICE_NEW="$(mktemp)"
 cat > "$SERVICE_NEW" <<'UNIT'
 [Unit]
-Description=Couchlink (keeps a gaming PC in step with the TV over HDMI-CEC)
+Description=CouchLink (keeps a gaming PC in step with the TV over HDMI-CEC)
 After=network-online.target couchlink-hid.service
 Wants=network-online.target
 
@@ -351,7 +351,7 @@ if [ "$WITH_HID" = 1 ]; then
         echo "config.txt already has dtoverlay=dwc2"
     else
         cp "$CONFIG_TXT" "$CONFIG_TXT.bak-couchlink"
-        printf '\n[all]\n# USB device (gadget) mode for the Couchlink keyboard\ndtoverlay=dwc2,dr_mode=peripheral\n' >> "$CONFIG_TXT"
+        printf '\n[all]\n# USB device (gadget) mode for the CouchLink keyboard\ndtoverlay=dwc2,dr_mode=peripheral\n' >> "$CONFIG_TXT"
         echo "Added dtoverlay=dwc2 to config.txt (backup: config.txt.bak-couchlink)"
         REBOOT_NEEDED=1
     fi
@@ -372,7 +372,7 @@ if [ "$WITH_HID" = 1 ]; then
 
     cat > "$ROOT/usr/local/bin/couchlink-hid-gadget.sh" <<'GADGET'
 #!/bin/bash
-# USB keyboard gadget for Couchlink. Safe to run more than once.
+# USB keyboard gadget for CouchLink. Safe to run more than once.
 #
 # Uses the Linux USB gadget configfs interface. The HID report descriptor is
 # the standard boot keyboard descriptor from the Linux kernel documentation
@@ -391,8 +391,8 @@ echo 0x1d6b > idVendor                    # Linux Foundation
 echo 0x0104 > idProduct                   # Multifunction Composite Gadget
 mkdir -p strings/0x409
 echo "0001"               > strings/0x409/serialnumber
-echo "Couchlink"          > strings/0x409/manufacturer
-echo "Couchlink Keyboard" > strings/0x409/product
+echo "CouchLink"          > strings/0x409/manufacturer
+echo "CouchLink Keyboard" > strings/0x409/product
 mkdir -p configs/c.1/strings/0x409
 echo "Config 1" > configs/c.1/strings/0x409/configuration
 echo 250  > configs/c.1/MaxPower
@@ -414,7 +414,7 @@ GADGET
 
     cat > "$UNIT_DIR/couchlink-hid.service" <<'HIDUNIT'
 [Unit]
-Description=Couchlink USB keyboard gadget
+Description=CouchLink USB keyboard gadget
 After=sys-kernel-config.mount
 Before=couchlink.service
 
@@ -468,7 +468,7 @@ if python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
 else
     if have_tty && [ "$TEST_MODE" != 1 ]; then
         say "Basic settings"
-        echo "Couchlink can ask for the PC's address and a few other settings now."
+        echo "CouchLink can ask for the PC's address and a few other settings now."
         echo "The CEC addresses come later, with the TV on."
         read -r -p "Fill in the basic settings now? [Y/n] " a </dev/tty
         if [ "$a" != n ] && [ "$a" != N ]; then

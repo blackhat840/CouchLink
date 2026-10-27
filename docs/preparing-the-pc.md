@@ -8,7 +8,7 @@ Desktop Mode or the desktop.
 
 In the examples below, replace `deck` with your username and `192.168.1.50`
 with the PC's IP address. On SteamOS the user is always `deck`. On Bazzite it
-is the account you created during setup, so set `ssh_user` in Couchlink's config
+is the account you created during setup, so set `ssh_user` in CouchLink's config
 to match.
 
 ## 1. Set a password
@@ -80,7 +80,7 @@ Notes by system:
 
 ## 4. Set up waking
 
-Couchlink needs some way to wake the PC. Pick whatever your PC supports. You
+CouchLink needs some way to wake the PC. Pick whatever your PC supports. You
 can combine them.
 
 **Wired Ethernet (most reliable).** Works from sleep and from power-off.
@@ -109,7 +109,7 @@ sudo nmcli connection modify "<wifi connection>" 802-11-wireless.wake-on-wlan ma
 
 **Controller.** Many controllers, and their USB dongles, can wake a sleeping
 PC by themselves. Put the PC to sleep and press the controller's home button.
-If the PC wakes, Couchlink notices within a few seconds and switches the TV
+If the PC wakes, CouchLink notices within a few seconds and switches the TV
 and soundbar to it. You still need network waking for the PC to wake when you
 pick its input on the TV. Some controllers need a udev rule before they can
 wake the PC. Bazzite ships these rules for the controllers it knows about.
@@ -127,7 +127,7 @@ sudo ssh deck@192.168.1.50 "echo ok"
 ```
 
 The last command should print `ok` without asking for a password. Then test
-the exact command Couchlink will use. This puts the PC to sleep:
+the exact command CouchLink will use. This puts the PC to sleep:
 
 ```bash
 sudo ssh deck@192.168.1.50 "sudo -n systemctl suspend"

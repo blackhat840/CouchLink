@@ -24,17 +24,17 @@ Common problems, what to check, and the known limitations.
 
 ## Known limitations
 
-- **CEC varies a lot between brands.** Couchlink has only been tested on the
+- **CEC varies a lot between brands.** CouchLink has only been tested on the
   hardware in
   [Hardware and systems](hardware.md). Your TV may announce input changes differently.
 - **The Pi cannot ask the TV which input it is on.** It relies on what the TV
-  and other devices announce. If the TV switches silently, Couchlink does not
+  and other devices announce. If the TV switches silently, CouchLink does not
   know.
 - **The Pi speaks for the PC.** It announces itself as the active source at
   the PC's address. Some TVs ignore that. If yours does, automatic switching
   to the PC will not work, but waking and suspending will.
 - **The Pi's own input is never kept while the PC is awake.** If the TV
-  switches to the Pi's input while the PC is on screen, Couchlink switches it
+  switches to the Pi's input while the PC is on screen, CouchLink switches it
   back. To look at the Pi's own screen, stop `couchlink.service` first.
 - **A PC restart looks like going to sleep.** If the PC is offline for longer
   than `pc_sleep_confirm`, the `on_pc_sleep` action runs. When the PC comes

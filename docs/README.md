@@ -18,7 +18,7 @@
 | `couchlink.py` | The program. Installed as `/usr/local/bin/couchlink`. |
 | `couchlink.example.toml` | Example settings, copied to `/etc/couchlink/config.toml` on first install |
 | `install.sh` | Installer and updater |
-| `test_couchlink.py` | Offline tests. Run with `python3 test_couchlink.py`. The installer adds `--quick`, which skips the tests of the installer itself. |
+| `test_couchlink.py` | Offline tests. Run with `python3 test_couchlink.py`. `install.sh --test` runs them with `--quick`, which skips the tests of the installer itself. |
 | `README.md` | Overview and quick start |
 | `CONTRIBUTING.md` | Rules for changes to this repository |
 | `docs/` | These guides and the status page screenshot |

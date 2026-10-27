@@ -44,7 +44,7 @@ Wired Ethernet is the most reliable way to wake the PC. See
    `sudo bash install.sh --with-hid` instead, then reboot when it finishes.
 
    The installer downloads the latest release from GitHub, installs
-   `cec-utils`, runs the offline tests, installs the program as
+   `cec-utils`, installs the program as
    `/usr/local/bin/couchlink`, creates `/etc/couchlink/config.toml`, and
    installs `couchlink.service` without enabling it. You do not need git or a
    GitHub account. At the end it asks for the settings (see
@@ -141,18 +141,18 @@ This downloads the latest release from GitHub and installs it. Other options:
 | `sudo bash install.sh --release` | Lists the releases and asks which one to install |
 | `bash install.sh --list-releases` | Lists the releases |
 | `sudo bash install.sh --update --local` | Installs the files next to `install.sh` instead, for example after `git pull` |
+| `sudo bash install.sh --update --test` | Runs the offline tests first. They check the code, not your Pi, and every release already passed them, so they are off by default. |
 
 An update does the following, in order:
 
 1. Downloads the release into a temporary folder and runs its installer.
 2. Skips the package step.
-3. Runs the offline tests.
-4. Brings a copy of your config up to date for the new version and checks
+3. Brings a copy of your config up to date for the new version and checks
    it. See [Updating an older config](configuration.md#updating-an-older-config).
-5. Installs the new script.
-6. Restarts the service if it is running.
+4. Installs the new script.
+5. Restarts the service if it is running.
 
-If the tests or the config check fail, nothing is changed and the installed
+If the config check fails, or the tests fail with `--test`, nothing is changed and the installed
 version keeps running. Installing a release older than the installed version
 asks you to confirm. If the installed version is already the latest release,
 nothing happens.

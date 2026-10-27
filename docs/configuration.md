@@ -97,7 +97,9 @@ sudo bash install.sh --setup
   for the wake and sleep buttons
 
 Then it offers to set up the SSH key (step 5 of
-[Preparing the PC](preparing-the-pc.md)). Press Enter to keep the value in
+[Preparing the PC](preparing-the-pc.md)). If the PC is asleep, it offers to
+wake it first, and pauses `couchlink.service` so the PC isn't put back to
+sleep. If SSH fails, it says why and what to do. Press Enter to keep the value in
 brackets. It keeps the comments in the file and saves the previous version as
 `config.toml.bak`.
 
@@ -200,7 +202,7 @@ seconds.
 | Setting | Default | Meaning |
 |---|---|---|
 | `claim_pc_input` | `true` | When the PC is selected, the Pi announces itself as the active source on the PC's behalf. This keeps the TV and soundbar on the PC and can route remote buttons to the Pi. |
-| `auto_switch_on_pc_wake` | `"always"` | When the PC wakes by itself: `"always"` turns the TV on and switches to it, `"if_tv_on"` only switches if the TV is already on, `"never"` does nothing. |
+| `auto_switch_on_pc_wake` | `"always"` | When the PC wakes by itself, for example from a controller: `"always"` turns the TV on and switches to it, `"if_tv_on"` only switches if the TV is already on, `"never"` leaves the TV alone. If the TV isn't switched to the PC, the PC goes back to sleep. For remote play, use a [remote session](how-it-works.md#remote-sessions) instead. |
 | `on_pc_sleep` | `"nothing"` | When the PC goes to sleep by itself while on screen: `"switch"` changes to `pc_sleep_switch_to`, `"standby"` turns the TV off, `"nothing"` leaves the TV alone. |
 | `pc_sleep_switch_to` | unset | The input to change to with `on_pc_sleep = "switch"`. |
 | `select_soundbar_audio` | `false` | Experimental. Asks the soundbar to switch to `soundbar_pc_audio_address` when the PC comes on. |

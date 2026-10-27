@@ -2219,6 +2219,57 @@ def find_mac(host):
     return None
 
 
+SSH_PROBLEMS = [
+    ("no route to host", "The Pi can't reach the PC. It is probably asleep or off. On Bazzite, the firewall "
+                         "also answers like this. To allow SSH, run this on the PC: "
+                         "sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --reload"),
+    ("connection refused", "The PC is on, but its SSH server isn't running. Run this on the PC: "
+                           "sudo systemctl enable --now sshd"),
+    ("timed out", "The PC didn't answer. It may be asleep or off, or a firewall drops SSH."),
+    ("could not resolve", "The Pi can't find the PC by that name. Use its IP address instead."),
+    ("host key verification failed", "The PC's key wasn't accepted. Run this again and answer yes "
+                                     "when asked whether to continue connecting."),
+    ("permission denied", "The PC didn't accept the key. Check that the SSH user is your account on "
+                          "the PC. On Bazzite, also run this on the PC: restorecon -Rv ~/.ssh"),
+]
+
+
+def ssh_problem(error):
+    """Advice for an ssh error message."""
+    text = error.lower()
+    for needle, advice in SSH_PROBLEMS:
+        if needle in text:
+            return advice
+    return "SSH still asks for a password or can't connect."
+
+
+def pc_answers(host):
+    """Whether the PC answers one ping."""
+    try:
+        return subprocess.run(["ping", "-c", "1", "-W", "1", host], stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL, timeout=5).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def wake_pc(host, send, out, answers=pc_answers, clock=time.monotonic, sleep=time.sleep, seconds=90):
+    """Send Wake-on-LAN until the PC answers ping, for up to seconds. Returns whether it did."""
+    out(f"Sending Wake-on-LAN. Waiting up to {seconds} seconds for the PC to answer.")
+    end = clock() + seconds
+    next_send = clock()
+    while clock() < end:
+        if clock() >= next_send:
+            send()
+            next_send = clock() + 15
+        if answers(host):
+            out("The PC is awake.")
+            return True
+        sleep(2)
+    out("The PC didn't wake up. Turn it on by hand, and see the Wake-on-LAN steps in")
+    out(f"{DOCS_URL}/preparing-the-pc.md")
+    return False
+
+
 def setup_ssh_key(host, user, out):
     """Create root's SSH key if needed, copy it to the PC, and test it."""
     key = "/root/.ssh/id_ed25519"
@@ -2231,11 +2282,16 @@ def setup_ssh_key(host, user, out):
     if r.returncode == 0 and r.stdout.strip() == "ok":
         out("SSH works without a password.")
         return True
-    out(f"SSH still asks for a password or can't connect. See {DOCS_URL}/preparing-the-pc.md")
+    error = (r.stderr or "").strip().splitlines()
+    if error:
+        out(f"ssh said: {error[-1]}")
+    out(ssh_problem(r.stderr or ""))
+    out(f"See {DOCS_URL}/preparing-the-pc.md")
     return False
 
 
-def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_ssh_key):
+def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_ssh_key,
+              pc_check=pc_answers, waker=None, service=None):
     """Ask for the settings that don't need CEC addresses and write them to the config."""
     try:
         with open(path) as f:
@@ -2287,10 +2343,12 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
                   "Use 40 characters or fewer.", blank_ok=True)
 
     out("")
-    out("When the PC wakes by itself, for example from a controller:")
+    out("When the PC wakes by itself, for example from a controller or its power button:")
     out("  1) turn the TV on and switch it to the PC")
     out("  2) switch the TV to the PC only if the TV is already on")
-    out("  3) leave the TV alone")
+    out("  3) leave the TV alone. The PC goes back to sleep unless you switch the TV to it")
+    out("This is not for remote play. To stream to another device, use Wake PC on the status")
+    out("page, which keeps the PC awake without the TV.")
     wake_modes = {"1": "always", "2": "if_tv_on", "3": "never"}
     default = {v: k for k, v in wake_modes.items()}.get(current.get("auto_switch_on_pc_wake"), "1")
     wake_mode = wake_modes[prompt("Choose 1, 2 or 3", default, lambda a: a in wake_modes, "Enter 1, 2 or 3.")]
@@ -2344,10 +2402,32 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
     out("The Pi needs an SSH key the PC trusts, so it can put the PC to sleep.")
     out("The PC needs a password and its SSH server turned on first (steps 1 and 2 of")
     out(f"{DOCS_URL}/preparing-the-pc.md).")
+    ssh_ok = None
     if prompt("Set up the SSH key now? (y/n)", "y", lambda a: a.lower() in ("y", "n")).lower() == "y":
-        ssh_setup(host, user, out)
+        service = service or couchlink_service
+        if waker is None:
+            mac_addr = mac.lower().replace("-", ":")
+            broadcast, port = current.get("wol_broadcast", "255.255.255.255"), current.get("wol_port", 9)
+            waker = lambda h, o: wake_pc(h, lambda: send_magic_packet(mac_addr, broadcast, port), o)
+        paused = False
+        awake = pc_check(host)
+        if not awake:
+            out(f"The PC at {host} doesn't answer. It may be asleep or off.")
+            if prompt("Wake it with Wake-on-LAN? (y/n)", "y", lambda a: a.lower() in ("y", "n")).lower() == "y":
+                paused = service("stop")
+                if paused:
+                    out("Paused couchlink.service, so it doesn't put the PC back to sleep.")
+                awake = waker(host, out)
+        if awake:
+            ssh_ok = ssh_setup(host, user, out)
+        else:
+            out("The SSH key needs the PC to be on. Turn it on, then run: sudo bash install.sh --setup")
+            ssh_ok = False
+        if paused:
+            service("start")
+            out("Started couchlink.service again.")
     else:
-        out("Skipped. Run sudo couchlink --setup again later to do it.")
+        out("Skipped. Run sudo bash install.sh --setup again later to do it.")
 
     settings, _ = load_config(path)
     _, problems = validate(settings)
@@ -2357,7 +2437,10 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
         for p in problems:
             out(f"  {p}")
         out("Find the CEC addresses with: sudo couchlink --setup-cec")
-    else:
+    if ssh_ok is False:
+        out("SSH to the PC doesn't work yet, so CouchLink can't put the PC to sleep.")
+        out("Fix that, then run: sudo bash install.sh --setup")
+    elif not problems:
         out("The config is complete. Check it with: sudo couchlink --check-config")
     return 0
 

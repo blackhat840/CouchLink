@@ -47,16 +47,19 @@ Wired Ethernet is the most reliable way to wake the PC. See
    `cec-utils`, runs the offline tests, installs the program as
    `/usr/local/bin/couchlink`, creates `/etc/couchlink/config.toml`, and
    installs `couchlink.service` without enabling it. You do not need git or a
-   GitHub account. At the end it offers to fill in the PC's settings for you
-   (see [Configuration](configuration.md#the-pcs-settings)) and prints the next
-   steps.
+   GitHub account. At the end it asks for the settings (see
+   [Configuration](configuration.md#the-settings)), then finds the CEC
+   addresses with you (see
+   [Finding your CEC addresses](configuration.md#finding-your-cec-addresses)),
+   and prints the next steps.
 
    If you prefer git, `git clone https://github.com/blackhat840/CouchLink.git`,
    then `cd CouchLink` and `sudo bash install.sh` installs the files from the
    clone instead.
 
-5. **Find your CEC addresses** and fill in the config. See
-   [Configuration](configuration.md).
+5. **Find your CEC addresses**, if you skipped it in step 4. Turn the TV on,
+   then run `sudo bash install.sh --setup-cec`. See
+   [Configuration](configuration.md#finding-your-cec-addresses).
 
 6. **Prepare the PC** so the Pi can wake it and put it to sleep. See
    [Preparing the PC](preparing-the-pc.md).

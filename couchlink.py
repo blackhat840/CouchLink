@@ -2149,10 +2149,10 @@ MAC_RE = re.compile(r"([0-9a-f]{2}[:-]){5}[0-9a-f]{2}", re.IGNORECASE)
 def set_config_value(text, key, value):
     """Set key = value in TOML text, keeping its comment and position. A
     commented-out key is switched on. A missing key is added at the end."""
-    rendered = json.dumps(value) if isinstance(value, str) else str(value).lower()
+    rendered = json.dumps(value) if isinstance(value, (str, list)) else str(value).lower()
     m = None
-    for prefix in (r"", r"#\s*"):          # an active line first, then a commented-out one
-        m = re.compile(rf'^(\s*){prefix}{key}(\s*)=\s*("[^"]*"|[^#\n]*?)(\s*#.*)?$', re.M).search(text)
+    for prefix in (r"", r"#[ \t]*"):       # an active line first, then a commented-out one
+        m = re.compile(rf'^([ \t]*){prefix}{key}([ \t]*)=[ \t]*("[^"]*"|[^#\n]*?)([ \t]*#.*)?$', re.M).search(text)
         if m:
             break
     if m is None:
@@ -2163,6 +2163,20 @@ def set_config_value(text, key, value):
         column = m.start(4) - m.start() + len(comment) - len(comment.lstrip())
         line = line.ljust(column - 1) + " " + comment.lstrip()
     return text[:m.start()] + line + text[m.end():]
+
+
+def unset_config_value(text, key):
+    """Comment out key's active line, if there is one."""
+    return re.sub(rf'^([ \t]*)({key}[ \t]*=.*)$', r"\1# \2", text, count=1, flags=re.M)
+
+
+def show_api_key(key, path, out):
+    out(f"New API key: {key}")
+    out("")
+    out(f"Copy it now. Only a hash of it is saved in {path}, so it can't be shown again.")
+    out("Making another key replaces it, and the old one stops working.")
+    out("The status page asks for it once on each device. Scripts send it as:")
+    out("  Authorization: Bearer <key>")
 
 
 def new_api_key(path, out=print):
@@ -2180,13 +2194,8 @@ def new_api_key(path, out=print):
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --new-api-key")
         return 1
-    out(f"New API key: {key}")
-    out("")
-    out(f"Copy it now. Only a hash of it is saved in {path}, so it can't be shown again.")
-    out("Running this again makes a new key and the old one stops working.")
+    show_api_key(key, path, out)
     out("Restart CouchLink to use it: sudo systemctl restart couchlink")
-    out("The status page asks for it once on each device. Scripts send it as:")
-    out("  Authorization: Bearer <key>")
     return 0
 
 
@@ -2233,10 +2242,12 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
     current, _ = load_config(path)
     current = current or dict(DEFAULTS)
 
-    def prompt(question, default=None, check=None, error=""):
+    def prompt(question, default=None, check=None, error="", blank_ok=False):
         while True:
             hint = f" [{default}]" if default else ""
             answer = ask(f"{question}{hint}: ").strip() or (default or "")
+            if not answer and blank_ok:
+                return ""
             if answer and (check is None or check(answer)):
                 return answer
             out(error or "Please enter a value.")
@@ -2267,21 +2278,48 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
                   lambda a: re.fullmatch(r"[A-Za-z0-9._-]+", a), "Enter a username such as deck.")
 
     out("")
+    out("A name for the PC on the status page. Press Enter to use the PC's own name.")
+    name = prompt("PC name", current.get("pc_name") or None, lambda a: len(a) <= 40,
+                  "Use 40 characters or fewer.", blank_ok=True)
+
+    out("")
+    out("When the PC wakes by itself, for example from a controller:")
+    out("  1) turn the TV on and switch it to the PC")
+    out("  2) switch the TV to the PC only if the TV is already on")
+    out("  3) leave the TV alone")
+    wake_modes = {"1": "always", "2": "if_tv_on", "3": "never"}
+    default = {v: k for k, v in wake_modes.items()}.get(current.get("auto_switch_on_pc_wake"), "1")
+    wake_mode = wake_modes[prompt("Choose 1, 2 or 3", default, lambda a: a in wake_modes, "Enter 1, 2 or 3.")]
+
+    out("")
     sleep_mode = None
     if current.get("on_pc_sleep") == "switch":
         out("When the PC goes to sleep by itself, the TV switches to another input. Keeping that.")
+        out("Change it with: sudo couchlink --setup-cec")
     else:
         out("When the PC goes to sleep by itself, for example from the Steam menu:")
         out("  1) leave the TV alone")
         out("  2) turn the TV off")
-        out("Switching the TV to another input is also possible once you know its CEC address.")
+        out("Switching the TV to another input, such as a streaming box, is set up with the CEC")
+        out("addresses: sudo couchlink --setup-cec")
         default = "2" if current.get("on_pc_sleep") == "standby" else "1"
         choice = prompt("Choose 1 or 2", default, lambda a: a in ("1", "2"), "Enter 1 or 2.")
         sleep_mode = "standby" if choice == "2" else "nothing"
 
+    out("")
+    out("The status page can have wake and sleep buttons, with an API for scripts and Home")
+    out("Assistant. They need an API key.")
+    question = ("An API key already exists. Make a new one? The old one stops working. (y/n)"
+                if current.get("api_key_hash") else "Make an API key now? (y/n)")
+    api_key = None
+    if prompt(question, "n", lambda a: a.lower() in ("y", "n"), "Enter y or n.").lower() == "y":
+        api_key = secrets.token_urlsafe(24)
+
     original = text
     for key, value in (("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")),
-                       ("ssh_user", user), ("on_pc_sleep", sleep_mode)):
+                       ("ssh_user", user), ("pc_name", name or None),
+                       ("auto_switch_on_pc_wake", wake_mode), ("on_pc_sleep", sleep_mode),
+                       ("api_key_hash", hash_api_key(api_key) if api_key else None)):
         if value is not None:
             text = set_config_value(text, key, value)
     try:
@@ -2294,6 +2332,9 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
         return 1
     out("")
     out(f"Saved to {path}. The previous version is in {path}.bak.")
+    if api_key:
+        out("")
+        show_api_key(api_key, path, out)
 
     out("")
     out("The Pi needs an SSH key the PC trusts, so it can put the PC to sleep.")
@@ -2311,9 +2352,271 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
         out("Still to do:")
         for p in problems:
             out(f"  {p}")
-        out(f"Find the CEC addresses with {DOCS_URL}/configuration.md")
+        out("Find the CEC addresses with: sudo couchlink --setup-cec")
     else:
         out("The config is complete. Check it with: sudo couchlink --check-config")
+    return 0
+
+
+# --------------------------------------------------------------------------
+# setup-cec: find the CEC addresses
+# --------------------------------------------------------------------------
+SCAN_DEVICE_RE = re.compile(r"^device #([0-9a-f]+):\s*(.*)$", re.IGNORECASE)
+SCAN_FIELD_RE = re.compile(r"^(address|vendor|osd string):\s*(.*)$", re.IGNORECASE)
+
+
+def parse_scan(text):
+    """The devices in cec-client's "scan" output, as dicts with logical, name, address, vendor, osd."""
+    devices = []
+    for line in text.splitlines():
+        line = line.strip()
+        m = SCAN_DEVICE_RE.match(line)
+        if m:
+            devices.append({"logical": int(m.group(1), 16), "name": m.group(2).strip(),
+                            "address": None, "vendor": "", "osd": ""})
+            continue
+        m = SCAN_FIELD_RE.match(line)
+        if m and devices:
+            field, value = m.group(1).lower(), m.group(2).strip()
+            if field == "address":
+                devices[-1]["address"] = normalize_addr(value)
+            else:
+                devices[-1]["vendor" if field == "vendor" else "osd"] = value
+    return [d for d in devices if d["address"]]
+
+
+def announced_address(msg):
+    """The input a CEC message says is now active, or None."""
+    p = msg.params if msg else []
+    if not (msg and msg.broadcast):
+        return None
+    if msg.opcode in ("82", "86", "81") and len(p) >= 2:
+        return f"{p[0]}:{p[1]}"
+    if msg.opcode == "80" and len(p) >= 4:
+        return f"{p[2]}:{p[3]}"
+    return None
+
+
+def dotted(addr):
+    """'12:00' -> '1.2.0.0'."""
+    return ".".join(addr.replace(":", ""))
+
+
+def cec_scan(command):
+    """Ask every device on the bus who it is. Returns parse_scan's list."""
+    try:
+        r = subprocess.run([command[0], "-s", "-d", "1"], input="scan\n", capture_output=True,
+                           text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return parse_scan(r.stdout)
+
+
+def cec_watch(command, seconds, wanted, out=print):
+    """Listen to the bus until a message names an input that wanted() accepts. Returns it or None."""
+    try:
+        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1)
+    except OSError:
+        return None
+    lines = queue.Queue()
+    threading.Thread(target=lambda: [lines.put(x) for x in proc.stdout], daemon=True).start()
+    try:
+        ready = time.monotonic() + 15
+        while time.monotonic() < ready:         # cec-client takes a few seconds to open the adapter
+            try:
+                if "waiting for input" in lines.get(timeout=1).lower():
+                    break
+            except queue.Empty:
+                pass
+        out(f"Listening now. You have {seconds} seconds.")
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            try:
+                addr = announced_address(parse_rx(lines.get(timeout=1)))
+            except queue.Empty:
+                continue
+            if addr and wanted(addr):
+                return addr
+        return None
+    finally:
+        proc.kill()
+
+
+def couchlink_service(action):
+    """Stop or start couchlink.service. stop returns whether it was running."""
+    try:
+        if action == "stop":
+            active = subprocess.run(["systemctl", "is-active", "--quiet", "couchlink.service"]).returncode == 0
+            if active:
+                subprocess.run(["systemctl", "stop", "couchlink.service"], check=False)
+            return active
+        subprocess.run(["systemctl", "start", "couchlink.service"], check=False)
+    except OSError:
+        pass
+    return False
+
+
+def run_cec_setup(path, ask=input, out=print, scan=cec_scan, watch=cec_watch, service=couchlink_service):
+    """Find the CEC addresses with the user and write them to the config."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        out(f"{path} not found. Run the installer first.")
+        return 1
+    current, _ = load_config(path)
+    current = current or dict(DEFAULTS)
+    command = current["cec_client_command"]
+    pi_la = current["pi_logical_address"]
+
+    def prompt(question, default, check, error):
+        while True:
+            hint = f" [{default}]" if default else ""
+            answer = ask(f"{question}{hint}: ").strip() or (default or "")
+            if answer and check(answer):
+                return answer
+            out(error)
+
+    def yes(question, default="y"):
+        return prompt(question, default, lambda a: a.lower() in ("y", "n"), "Enter y or n.").lower() == "y"
+
+    def number(question):
+        return int(prompt(question, None, lambda a: a.isdigit() and 1 <= int(a) <= 9, "Enter a number from 1 to 9."))
+
+    out("CouchLink CEC setup. This finds the HDMI addresses CouchLink needs.")
+    out("Before you start, turn the TV on, and plug in and turn on the PC.")
+    out("")
+    out("How is the PC connected?")
+    out("  1) To the TV, with no soundbar or AV receiver")
+    out("  2) To the TV, with a soundbar or AV receiver on the TV's ARC or eARC port")
+    out("  3) To a soundbar or AV receiver, which is connected to the TV")
+    layout = prompt("Choose 1, 2 or 3", None, lambda a: a in ("1", "2", "3"), "Enter 1, 2 or 3.")
+    has_bar, pc_behind_bar = layout in ("2", "3"), layout == "3"
+
+    was_running = service("stop")
+    if was_running:
+        out("")
+        out("Stopped couchlink.service while this uses the CEC adapter. It starts again at the end.")
+    try:
+        out("")
+        out("Asking every HDMI device who it is. This takes up to a minute.")
+        devices = scan(command)
+        if not devices:
+            out("No CEC devices answered. Check that the TV is on, that the Pi is plugged into one of")
+            out("its HDMI inputs, and that CEC is turned on in the TV's settings. TVs call it Anynet+,")
+            out("Bravia Sync, SimpLink, CEC or HDMI control.")
+            return 1
+        me = next((d for d in devices if d["logical"] == pi_la), None)
+        out("Found:")
+        for d in devices:
+            label = "this Pi" if d is me else d["osd"] or d["vendor"]
+            extra = f", {label}" if label and label.lower() != d["name"].lower() else ""
+            out(f"  {dotted(d['address']):<9} {d['name']}{extra}")
+
+        out("")
+        if me and me["address"] != "00:00":
+            pi = me["address"]
+            out(f"The Pi is on TV input {pi[0]} ({dotted(pi)}).")
+        else:
+            out("The Pi did not show up in the scan.")
+            pi = f"{number('Which TV input is the Pi plugged into? (1-9)')}0:00"
+
+        bar = None
+        if has_bar:
+            audio = next((d for d in devices if d["logical"] == 5), None)
+            if audio and yes(f"Is {audio['osd'] or audio['vendor'] or 'the audio device'} on "
+                             f"{dotted(audio['address'])} your soundbar or receiver? (y/n)"):
+                bar = audio["address"]
+            else:
+                bar = f"{number('Which TV input is the soundbar or receiver plugged into? (1-9)')}0:00"
+
+        known = {d["address"] for d in devices} | {pi, "00:00"} | ({bar} if bar else set())
+        out("")
+        out("Now find the PC's input. CouchLink listens while you switch to it.")
+        out("Use the TV's remote" + (", or the soundbar's or receiver's remote," if has_bar else "") +
+            " to switch to the PC so its picture is on screen.")
+        out("If the PC is already on screen, switch to another input first, then back to the PC.")
+        pc = watch(command, 60, lambda a: a not in known, out)
+        if pc:
+            out(f"Heard a switch to {dotted(pc)}.")
+            if not yes("Is that the PC's input? (y/n)"):
+                pc = None
+        else:
+            out("Did not hear a switch to a new input.")
+        if not pc:
+            if pc_behind_bar:
+                pc = f"{bar[0]}{number('Which input on the soundbar or receiver is the PC plugged into? (1-9)')}:00"
+            else:
+                pc = f"{number('Which TV input is the PC plugged into? (1-9)')}0:00"
+        if pc in (pi, bar):
+            out(f"{dotted(pc)} is the {'Pi' if pc == pi else 'soundbar or receiver'}, not the PC. "
+                "Run this again to try once more.")
+            return 1
+
+        out("")
+        out("When the PC goes to sleep by itself, CouchLink can switch the TV to another input,")
+        out("such as a streaming box.")
+        switch_to = None
+        declined = not yes("Do that? (y/n)", "y" if current.get("on_pc_sleep") == "switch" else "n")
+        if not declined:
+            others = [d for d in devices if d["address"] not in (pi, bar, pc, "00:00")]
+            for i, d in enumerate(others, 1):
+                out(f"  {i}) {d['osd'] or d['name']} on {dotted(d['address'])}")
+            listen = len(others) + 1
+            out(f"  {listen}) another input: switch to it now and CouchLink listens")
+            pick = int(prompt(f"Choose 1-{listen}", None, lambda a: a.isdigit() and 1 <= int(a) <= listen,
+                              f"Enter a number from 1 to {listen}."))
+            if pick < listen:
+                switch_to = others[pick - 1]["address"]
+            else:
+                out("Switch to the input to use when the PC sleeps.")
+                switch_to = watch(command, 60, lambda a: a not in (pi, pc, "00:00"), out)
+                if switch_to:
+                    out(f"Heard a switch to {dotted(switch_to)}.")
+                else:
+                    out("Did not hear a switch. Keeping the current setting for when the PC sleeps.")
+    finally:
+        if was_running:
+            service("start")
+            out("Started couchlink.service again.")
+
+    original = text
+    text = set_config_value(text, "pc_addresses", [pc])
+    text = set_config_value(text, "pi_address", pi)
+    text = set_config_value(text, "soundbar_address", bar) if bar else unset_config_value(text, "soundbar_address")
+    if switch_to:
+        text = set_config_value(text, "on_pc_sleep", "switch")
+        text = set_config_value(text, "pc_sleep_switch_to", switch_to)
+    elif declined and current.get("on_pc_sleep") == "switch":
+        text = set_config_value(text, "on_pc_sleep", "nothing")
+    try:
+        with open(path + ".bak", "w") as f:
+            f.write(original)
+        with open(path, "w") as f:
+            f.write(text)
+    except PermissionError:
+        out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup-cec")
+        return 1
+
+    out("")
+    out(f"Saved to {path}. The previous version is in {path}.bak.")
+    out(f"  pc_addresses = [\"{pc}\"]      the PC ({dotted(pc)})")
+    out(f"  pi_address = \"{pi}\"          the Pi ({dotted(pi)})")
+    if bar:
+        out(f"  soundbar_address = \"{bar}\"    the soundbar or receiver ({dotted(bar)})")
+    if switch_to:
+        out(f"  pc_sleep_switch_to = \"{switch_to}\"  when the PC sleeps ({dotted(switch_to)})")
+    settings, _ = load_config(path)
+    _, problems = validate(settings)
+    out("")
+    if problems:
+        out("Still to do:")
+        for p in problems:
+            out(f"  {p}")
+        return 0
+    out("The config is complete. Try it without changing anything (Ctrl+C stops it):")
+    out("  sudo couchlink --dry-run")
     return 0
 
 
@@ -2468,11 +2771,18 @@ def main(argv=None):
     ap.add_argument("--migrate-config", action="store_true",
                     help="bring a config from an older version up to date, explaining each change "
                          "(with --dry-run, only show the changes)")
+    ap.add_argument("--setup-cec", action="store_true",
+                    help="find the CEC addresses with the TV on and save them")
     ap.add_argument("--new-api-key", action="store_true",
                     help="make a key for the wake and sleep buttons and API, replacing any old one")
     args = ap.parse_args(argv)
     if args.new_api_key:
         sys.exit(new_api_key(args.config))
+    if args.setup_cec:
+        if os.geteuid() != 0:
+            print("Run it with sudo: sudo couchlink --setup-cec")
+            sys.exit(1)
+        sys.exit(run_cec_setup(args.config))
     if args.migrate_config:
         sys.exit(migrate_config(args.config, dry_run=args.dry_run))
     if args.setup:

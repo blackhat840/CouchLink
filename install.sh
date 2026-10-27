@@ -16,6 +16,13 @@
 #     sudo bash install.sh --with-hid   # first install + USB keyboard for remote buttons
 #     sudo bash install.sh --update     # update to the latest release on GitHub
 #
+# Setting up an installed CouchLink:
+#
+#     --setup                    answer questions to fill in the config, all but
+#                                the CEC addresses
+#     --setup-cec                find the CEC addresses with the TV on (asks
+#                                whether you have a soundbar or AV receiver)
+#
 # More update options:
 #
 #     --release v2.3.1           install that release
@@ -48,6 +55,7 @@ UPDATE=0
 LOCAL=0
 LIST=0
 PICK=0
+SETUP=""
 RELEASE=""
 ALL_ARGS="$*"
 while [ $# -gt 0 ]; do
@@ -56,6 +64,8 @@ while [ $# -gt 0 ]; do
         --update) UPDATE=1 ;;
         --local) LOCAL=1 ;;
         --list-releases) LIST=1 ;;
+        --setup) SETUP=setup ;;
+        --setup-cec) SETUP=setup-cec ;;
         --release)
             if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then RELEASE="$2"; shift; else PICK=1; fi ;;
         --release=*) RELEASE="${1#*=}" ;;
@@ -162,6 +172,14 @@ LOG_DIR="$ROOT/tmp"
 mkdir -p "$LOG_DIR"
 TEST_LOG="$LOG_DIR/couchlink-test.log"
 CHECK_LOG="$LOG_DIR/couchlink-check.log"
+
+# ---------------------------------------------------------------- setup of an installed CouchLink
+if [ -n "$SETUP" ]; then
+    [ -f "$BIN" ] && [ -f "$CONF" ] || die "CouchLink isn't installed yet. Run: sudo bash install.sh"
+    have_tty || die "--$SETUP asks questions, so run it from a terminal"
+    python3 "$BIN" --config "$CONF" "--$SETUP" </dev/tty
+    exit $?
+fi
 
 # ---------------------------------------------------------------- releases on GitHub
 if [ "$LIST" = 1 ]; then
@@ -491,12 +509,21 @@ if python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
     echo "Config OK"
 else
     if have_tty && [ "$TEST_MODE" != 1 ]; then
-        say "Basic settings"
-        echo "CouchLink can ask for the PC's address and a few other settings now."
-        echo "The CEC addresses come later, with the TV on."
-        read -r -p "Fill in the basic settings now? [Y/n] " a </dev/tty
+        say "Settings"
+        echo "CouchLink asks for the PC's address and the other settings now."
+        echo "The CEC addresses come after that, with the TV on."
+        read -r -p "Fill in the settings now? [Y/n] " a </dev/tty
         if [ "$a" != n ] && [ "$a" != N ]; then
-            python3 "$BIN" --config "$CONF" --setup </dev/tty || warn "Setup did not finish. Run it again with: sudo couchlink --setup"
+            python3 "$BIN" --config "$CONF" --setup </dev/tty || warn "Setup did not finish. Run it again with: sudo bash install.sh --setup"
+        fi
+        if ! python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
+            say "CEC addresses"
+            echo "Next, CouchLink finds the HDMI addresses of the PC, the Pi and any soundbar or"
+            echo "AV receiver. The TV must be on, with the PC plugged in and turned on."
+            read -r -p "Find them now? [Y/n] " a </dev/tty
+            if [ "$a" != n ] && [ "$a" != N ]; then
+                python3 "$BIN" --config "$CONF" --setup-cec </dev/tty || warn "Not finished. Run it again with: sudo bash install.sh --setup-cec"
+            fi
         fi
     else
         grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
@@ -508,17 +535,15 @@ fi
 say "Done. Next steps"
 DOCS="https://github.com/blackhat840/CouchLink/blob/main/docs"
 cat <<STEPS
-1. Fill in the PC's settings, if you skipped it above:
-     sudo couchlink --setup
-2. Find your CEC addresses and add them to the config, then check it.
-   Guide: $DOCS/configuration.md
-     sudo systemctl stop couchlink.service 2>/dev/null; echo "scan" | cec-client -s -d 1
-     sudo nano /etc/couchlink/config.toml
-     sudo couchlink --check-config
+1. Fill in the settings, if you skipped it above:
+     sudo bash install.sh --setup
+2. Find the CEC addresses with the TV on, if you skipped it above:
+     sudo bash install.sh --setup-cec
+   To do it by hand instead, see $DOCS/configuration.md
 3. Set up the PC so the Pi can wake it and put it to sleep.
    Guide: $DOCS/preparing-the-pc.md
-4. Give root on the Pi an SSH key the PC trusts. sudo couchlink --setup
-   offers to do this. By hand:
+4. Give root on the Pi an SSH key the PC trusts. --setup offers to do
+   this. By hand:
      sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519
      sudo ssh-copy-id deck@<pc-ip>
      sudo ssh deck@<pc-ip> "echo ok"

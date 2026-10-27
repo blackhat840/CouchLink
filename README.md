@@ -50,9 +50,10 @@ GitHub account needed. New to the Pi? Follow the
 Then:
 
 1. Answer the installer's questions about the PC. To change them later, run
-   `sudo couchlink --setup`.
-2. Find your CEC addresses and add them to `/etc/couchlink/config.toml`. See
-   [Configuration](docs/configuration.md).
+   `sudo bash install.sh --setup`.
+2. Let the installer find the CEC addresses, with the TV on. It asks whether
+   you have a soundbar or AV receiver, then listens while you switch to the PC.
+   To do it again later, run `sudo bash install.sh --setup-cec`.
 3. Set up the PC so the Pi can wake it and put it to sleep. See
    [Preparing the PC](docs/preparing-the-pc.md).
 4. Try a dry run, then go live. See

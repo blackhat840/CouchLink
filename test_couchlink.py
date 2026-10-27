@@ -17,6 +17,8 @@ import tarfile
 import tempfile
 import threading
 import unittest
+import urllib.error
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -100,6 +102,12 @@ class Sim:
 
     def pc(self, online):
         self.ev(("ping", online))
+
+    def do(self, name, **params):
+        """An action from the status page or API. Returns (ok, result, message)."""
+        answer = self.ctl.action(name, params, "192.168.1.20")
+        self.ctl.tick()
+        return answer
 
 
 class ConfigTests(unittest.TestCase):
@@ -1315,6 +1323,359 @@ class PcNameTests(unittest.TestCase):
     def test_bad_name_rejected(self):
         _, problems = couchlink.validate(dict(BASE, pc_name="x" * 41))
         self.assertTrue(any("pc_name" in p for p in problems))
+
+
+class RemoteSessionTests(unittest.TestCase):
+    """Waking the PC for streaming without the TV, and Wake PC and TV."""
+
+    def tv_elsewhere(self, pc_up=False, **overrides):
+        s = Sim(**dict(REAL, **overrides))
+        s.pc(pc_up)
+        s.ev(("pc_power", "link_up"))
+        s.ev(msg("5f:81:11:00"))                        # TV on the streamer
+        s.run(30)
+        s.act.cec.clear()
+        return s
+
+    def left(self, s):
+        return s.ctl.snapshot()["remote_session_seconds_left"]
+
+    def tv_commands(self, s):
+        return [c for c in s.act.cec if c != "pow 0"]  # power queries don't change the TV
+
+    def test_session_wakes_pc_and_leaves_tv_alone(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        self.assertEqual(s.act.wols, 1)
+        s.run(5)
+        s.pc(True)
+        s.run(3600)
+        self.assertEqual(s.act.wols, 1)
+        self.assertEqual(s.act.suspends, 0)             # kept awake without the TV
+        self.assertEqual(self.tv_commands(s), [])                 # TV not touched
+        self.assertEqual(s.ctl.tv_input, "11:00")
+        self.assertAlmostEqual(self.left(s), 3 * 3600 - 5, delta=2)
+
+    def test_session_retries_wol_then_gives_up(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.run(300)
+        self.assertEqual(s.act.wols, s.cfg.max_wol_attempts)
+        self.assertIsNone(self.left(s))                 # ended, not stuck waking
+
+    def test_wake_again_extends_session(self):
+        s = self.tv_elsewhere(remote_session_hours=1)
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(1800)
+        s.do("wake", tv=False)
+        self.assertAlmostEqual(self.left(s), 3600, delta=2)
+        self.assertEqual(s.act.wols, 1)
+
+    def test_pc_already_on_is_kept_awake(self):
+        s = self.tv_elsewhere(pc_up=True, away_debounce=60)
+        s.do("wake", tv=False)
+        s.run(600)
+        self.assertEqual(s.act.wols, 0)
+        self.assertEqual(s.act.suspends, 0)
+
+    def test_timeout_then_waits_away_debounce(self):
+        s = self.tv_elsewhere(remote_session_hours=0.1)
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(359)
+        self.assertEqual(s.act.suspends, 0)
+        s.run(3)
+        self.assertIsNone(self.left(s))                 # ended
+        self.assertEqual(s.act.suspends, 0)             # not right away
+        s.run(s.cfg.away_debounce)
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_end_by_hand(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(60)
+        s.do("end_session")
+        self.assertIsNone(self.left(s))
+        s.run(s.cfg.away_debounce + 1)
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_tv_switched_to_pc_becomes_normal_use(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(60)
+        s.ev(msg("5f:81:12:00"))                        # TV switched to the PC
+        self.assertIsNone(self.left(s))
+        s.run(60)
+        s.ev(msg("5f:81:11:00"))                        # and away again
+        s.run(s.cfg.away_debounce + 1)
+        self.assertEqual(s.act.suspends, 1)             # usual rules again
+
+    def test_pc_going_to_sleep_ends_session(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(60)
+        s.ev(("pc_power", "sleep"))
+        s.pc(False)
+        self.assertIsNone(self.left(s))
+        s.run(300)
+        self.assertEqual(s.act.wols, 1)                 # not woken again
+        self.assertEqual(self.tv_commands(s), [])
+
+    def test_restart_keeps_session(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(60)
+        s.ev(("pc_power", "reboot"))
+        s.pc(False)
+        s.run(60)
+        self.assertIsNotNone(self.left(s))
+        self.assertEqual(s.ctl.snapshot()["pc_power"], "restarting")
+        s.pc(True)
+        s.run(600)
+        self.assertIsNotNone(self.left(s))
+        self.assertEqual(s.act.wols, 1)
+        self.assertEqual(s.act.suspends, 0)
+        self.assertEqual(self.tv_commands(s), [])
+
+    def test_restart_that_never_comes_back_ends_session(self):
+        s = self.tv_elsewhere()
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(60)
+        s.ev(("pc_power", "reboot"))
+        s.pc(False)
+        s.run(400)
+        self.assertIsNone(self.left(s))
+        self.assertEqual(s.act.wols, 1)
+
+    def test_not_needed_when_tv_is_on_pc(self):
+        s = Sim(**REAL)
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.do("wake", tv=False)
+        self.assertIsNone(self.left(s))
+
+    def test_wake_pc_and_tv(self):
+        s = self.tv_elsewhere(auto_switch_on_pc_wake="never")
+        s.do("wake", tv=True)
+        self.assertIn("on 0", s.act.cec)
+        s.run(2)
+        self.assertIn("tx 1F:82:12:00", s.act.cec)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.wols, 1)
+        self.assertIsNone(self.left(s))
+
+    def test_wake_pc_and_tv_after_pc_slept_on_screen(self):
+        s = Sim(**dict(REAL, on_pc_sleep="nothing", pc_sleep_switch_to=None))
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(30)
+        s.pc(False)                                     # put to sleep on screen
+        s.run(60)
+        self.assertEqual(s.act.wols, 0)
+        s.do("wake", tv=True)
+        s.run(1)
+        self.assertEqual(s.act.wols, 1)                 # a request wakes it anyway
+
+    def test_wake_pc_and_tv_with_tv_off(self):
+        s = self.tv_elsewhere()
+        s.ev(msg("0f:36"))                              # TV to standby
+        s.run(10)
+        s.do("wake", tv=True)
+        self.assertIn("on 0", s.act.cec)
+        self.assertTrue(s.ctl.snapshot()["tv_starting"])
+
+    def test_setting_must_be_positive(self):
+        _, problems = couchlink.validate(dict(BASE, remote_session_hours=0))
+        self.assertTrue(any("remote_session_hours" in p for p in problems))
+
+
+class ActionTests(unittest.TestCase):
+    """Wake, sleep and end session, as the status page and API ask for them."""
+
+    def test_sleep_ends_session_and_suspends_now(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))
+        s.run(30)
+        s.do("wake", tv=False)
+        s.pc(True)
+        s.run(60)
+        self.assertEqual(s.do("sleep"), (True, "suspending", "Putting the PC to sleep"))
+        self.assertEqual(s.act.suspends, 1)             # no away_debounce wait
+        self.assertIsNone(s.ctl.snapshot()["remote_session_seconds_left"])
+
+    def test_sleep_on_screen_runs_on_pc_sleep(self):
+        s = Sim(**REAL)                                 # on_pc_sleep = "switch" to 11:00
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(30)
+        s.do("sleep")
+        self.assertIn("tx 1F:82:11:00", s.act.cec)
+        self.assertEqual(s.ctl.tv_input, "11:00")
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_sleep_on_screen_with_nothing_leaves_tv_and_stays_asleep(self):
+        s = Sim(**dict(REAL, on_pc_sleep="nothing", pc_sleep_switch_to=None))
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(30)
+        s.do("sleep")
+        self.assertEqual(s.act.suspends, 1)
+        s.ev(("suspend_done", 0, ""))
+        s.pc(False)
+        s.run(120)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.wols, 0)                 # not woken again
+
+    def test_sleep_when_already_asleep(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))
+        self.assertEqual(s.do("sleep")[1], "already_asleep")
+        self.assertEqual(s.act.suspends, 0)
+
+    def test_rate_limit(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))
+        self.assertTrue(s.do("wake", tv=False)[0])
+        self.assertEqual(s.do("wake", tv=True)[:2], (False, "too_soon"))
+        s.run(couchlink.ACTION_COOLDOWN)
+        self.assertTrue(s.do("wake", tv=False)[0])
+
+    def test_end_without_session(self):
+        s = Sim(**REAL)
+        self.assertEqual(s.do("end_session")[1], "no_session")
+
+    def test_unknown_action(self):
+        s = Sim(**REAL)
+        self.assertEqual(s.do("reboot")[:2], (False, "unknown_action"))
+
+    def test_action_event_answers_on_reply_queue(self):
+        import queue
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))
+        q = queue.Queue()
+        s.ev(("action", "wake", {"tv": False}, "192.168.1.20", q))
+        self.assertEqual(q.get_nowait()[:2], (True, "session_started"))
+
+    def test_allow_actions_must_be_bool(self):
+        _, problems = couchlink.validate(dict(BASE, allow_actions="yes please"))
+        self.assertTrue(any("allow_actions" in p for p in problems))
+        self.assertFalse(couchlink.DEFAULTS["allow_actions"])
+
+
+class ApiTests(unittest.TestCase):
+    """POST /api/wake, /api/sleep and /api/session/end over real HTTP."""
+
+    def start(self, **overrides):
+        import queue
+        self.sim = Sim(**dict(REAL, **overrides))
+        self.sim.pc(False)
+        self.sim.ev(msg("5f:81:11:00"))
+        events = queue.Queue()
+
+        def worker():
+            while True:
+                event = events.get()
+                if event is None:
+                    return
+                self.sim.ctl.handle(event)
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        self.server = couchlink.start_dashboard(0, self.sim.ctl, events)
+        self.port = self.server.server_address[1]
+        self.addCleanup(self.server.shutdown)
+        self.addCleanup(events.put, None)
+
+    def post(self, path, body=b"{}", ctype="application/json", **headers):
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=body, method="POST")
+        if ctype:
+            req.add_header("Content-Type", ctype)
+        for k, v in headers.items():
+            req.add_header(k.replace("_", "-"), v)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            return e.code, json.loads(e.read())
+
+    def test_off_by_default(self):
+        self.start()
+        status, body = self.post("/api/wake", b'{"tv": false}')
+        self.assertEqual((status, body["result"]), (403, "actions_off"))
+        self.assertEqual(self.sim.act.wols, 0)
+
+    def test_wake_starts_session(self):
+        self.start(allow_actions=True)
+        status, body = self.post("/api/wake", b'{"tv": false}')
+        self.assertEqual((status, body["ok"], body["result"]), (200, True, "session_started"))
+        self.assertEqual(self.sim.act.wols, 1)
+        self.assertTrue(any("Wake PC requested from 127.0.0.1" in line for line in couchlink.LOG_RING))
+
+    def test_wake_pc_and_tv(self):
+        self.start(allow_actions=True)
+        status, body = self.post("/api/wake", b'{"tv": true}')
+        self.assertEqual(body["result"], "waking_pc_and_tv")
+        self.assertIn("on 0", self.sim.act.cec)
+
+    def test_end_session(self):
+        self.start(allow_actions=True)
+        self.post("/api/wake", b'{"tv": false}')
+        status, body = self.post("/api/session/end")
+        self.assertEqual((status, body["result"]), (200, "session_ended"))
+
+    def test_sleep(self):
+        self.start(allow_actions=True)
+        self.sim.pc(True)
+        status, body = self.post("/api/sleep")
+        self.assertEqual(body["result"], "suspending")
+        self.assertEqual(self.sim.act.suspends, 1)
+
+    def test_rate_limited(self):
+        self.start(allow_actions=True)
+        self.post("/api/wake", b'{"tv": false}')
+        status, body = self.post("/api/wake", b'{"tv": false}')
+        self.assertEqual((status, body["result"]), (429, "too_soon"))
+
+    def test_needs_json(self):
+        self.start(allow_actions=True)
+        status, body = self.post("/api/wake", b"tv=false", ctype="application/x-www-form-urlencoded")
+        self.assertEqual((status, body["result"]), (403, "refused"))
+        status, body = self.post("/api/wake", b"not json")
+        self.assertEqual((status, body["result"]), (400, "bad_request"))
+        status, body = self.post("/api/wake", b"[1]")
+        self.assertEqual(status, 400)
+        self.assertEqual(self.sim.act.wols, 0)
+
+    def test_other_sites_refused(self):
+        self.start(allow_actions=True)
+        for headers in ({"Origin": "http://evil.example"}, {"Origin": "null"},
+                        {"Sec_Fetch_Site": "cross-site"}):
+            status, body = self.post("/api/wake", b'{"tv": false}', **headers)
+            self.assertEqual((status, body["result"]), (403, "refused"), headers)
+        self.assertEqual(self.sim.act.wols, 0)
+
+    def test_same_site_allowed(self):
+        self.start(allow_actions=True)
+        status, body = self.post("/api/wake", b'{"tv": false}', Origin=f"http://127.0.0.1:{self.port}",
+                                 Sec_Fetch_Site="same-origin")
+        self.assertEqual(status, 200)
+
+    def test_unknown_path_and_get_stays_read_only(self):
+        self.start(allow_actions=True)
+        self.assertEqual(self.post("/api/reboot")[0], 404)
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/wake", timeout=5) as r:
+            snap = json.loads(r.read())                 # GET only reads
+        self.assertTrue(snap["actions_allowed"])
+        self.assertEqual(self.sim.act.wols, 0)
 
 
 if __name__ == "__main__":

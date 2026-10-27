@@ -175,6 +175,7 @@ seconds.
 | `hid_passthrough` | `true` | Forward TV remote buttons to the PC as a USB keyboard. Needs the `--with-hid` install. |
 | `hidg_device` | `"/dev/hidg0"` | The USB keyboard device. |
 | `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
+| `allow_actions` | `false` | Wake and sleep buttons on the status page, and the API behind them. There is no login yet, so only turn this on for a network you trust. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
 
 ### Timing
 
@@ -190,6 +191,7 @@ seconds.
 | `guard_delay` | `1.5` | Pause before undoing an automatic switch. |
 | `max_guard_recoveries` | `2` | Automatic switches undone per wake. |
 | `auto_switch_cooldown` | `30` | Minimum time between switching the TV to the PC on its own. |
+| `remote_session_hours` | `4` | How long a remote session keeps the PC awake without the TV. See [How it works](how-it-works.md#remote-sessions). |
 | `tv_boot_timeout` | `20` | When the PC wakes with the TV off: how long to wait for the TV to report that it is on before switching it to the PC anyway. |
 | `tv_boot_reclaims` | `3` | After the TV reports that it is on, how many more times to claim the PC's input. |
 | `tv_boot_reclaim_interval` | `2` | Time between those claims. Input changes in this period are undone. |

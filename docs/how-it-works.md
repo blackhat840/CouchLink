@@ -121,14 +121,17 @@ CouchLink has two kinds of wake:
 | Wake PC | Starts a remote session. CouchLink sends Wake-on-LAN and keeps the PC awake. The TV is left alone. |
 | Wake PC and TV | Same as waking the PC with a controller. The TV turns on and switches to the PC. |
 
-A remote session ends when:
+A remote session has no time limit, so it never ends in the middle of a game.
+It ends when:
 
-- `remote_session_hours` pass (4 by default)
-- it is ended by hand
+- the PC goes to sleep by itself or is turned off
+- you press End remote session or Put PC to sleep
 - the TV is switched to the PC, which turns it into normal use
-- the PC goes to sleep or is turned off
 
-A restart does not end it. When a session ends and the TV is on another input,
+When you stop streaming, the PC's own sleep timer puts it to sleep, and that
+ends the session. Make sure the timer is turned on in the PC's power settings.
+If the PC sleeps while you are still streaming, make the timer longer. A
+restart does not end a session. When a session ends and the TV is on another input,
 CouchLink waits `away_debounce` seconds and then suspends the PC, as it does
 after leaving the PC's input.
 

@@ -279,9 +279,21 @@ else
 fi
 
 # ---------------------------------------------------------------- update pre-check
+MIGRATED=""
 if [ "$UPDATE" = 1 ]; then
     say "Checking your config against the new version"
-    if python3 "$HERE/couchlink.py" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
+    CHECKED="$CONF"
+    if grep -q -- "--migrate-config" "$HERE/couchlink.py"; then
+        # Bring a copy up to date. Yours is only replaced once the new version is installed.
+        MIGRATED="$LOG_DIR/couchlink-migrated.toml"
+        cp "$CONF" "$MIGRATED"
+        python3 "$HERE/couchlink.py" --config "$MIGRATED" --migrate-config \
+            | sed "s|$MIGRATED|your config|g" \
+            || die "Couldn't bring your config up to date, so nothing was changed."
+        rm -f "$MIGRATED.bak"
+        CHECKED="$MIGRATED"
+    fi
+    if python3 "$HERE/couchlink.py" --config "$CHECKED" --check-config > "$CHECK_LOG" 2>&1; then
         echo "Config OK with ${NEW_VER:-the new version}"
     else
         grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
@@ -295,7 +307,12 @@ install -d "$ROOT/usr/local/bin" "$CONF_DIR" "$UNIT_DIR"
 install -m 0755 "$HERE/couchlink.py" "$BIN"
 echo "Installed $BIN (${NEW_VER:-unknown version})"
 
-if [ -f "$CONF" ]; then
+if [ -n "$MIGRATED" ] && ! cmp -s "$MIGRATED" "$CONF"; then
+    cp "$CONF" "$CONF.bak"
+    install -m 0644 "$MIGRATED" "$CONF"
+    echo "Brought $CONF up to date (the previous version is in $CONF.bak)"
+    install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
+elif [ -f "$CONF" ]; then
     echo "Kept your existing $CONF"
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
     echo "Latest example saved as $CONF_DIR/config.example.toml for comparison"
@@ -303,6 +320,7 @@ else
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF"
     echo "Created $CONF from the example"
 fi
+[ -z "$MIGRATED" ] || rm -f "$MIGRATED"
 
 SERVICE_FILE="$UNIT_DIR/couchlink.service"
 SERVICE_NEW="$(mktemp)"

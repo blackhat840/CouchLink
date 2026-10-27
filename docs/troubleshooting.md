@@ -7,7 +7,7 @@ Common problems, what to check, and the known limitations.
 | Problem | What to check |
 |---|---|
 | The service exits straight away | Run `--check-config`. It lists every problem. |
-| `Unknown setting` errors | The installed script is older than your config. Run the installer with `--update`. |
+| `Unknown setting` errors | The installed script is older than your config, or the setting has a typo. Run the installer with `--update`, or run `sudo couchlink --migrate-config` to fix typos and old settings. |
 | `scan` shows no devices | CEC is off in the TV's settings, or the Pi was not connected to the TV at boot. Reboot with the TV connected. |
 | No input changes are logged | Turn on `raw_debug` and look at what your TV sends when you switch. Make sure `watch_routing_messages` is on. |
 | The PC never wakes | Test with `wakeonlan <mac>` from the Pi. Check the BIOS and OS wake settings. Try a subnet `wol_broadcast`. |

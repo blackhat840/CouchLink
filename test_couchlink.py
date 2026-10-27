@@ -845,6 +845,29 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("Run without --local to download it", out)
         self.assertIsNone(self.stub_ran())
 
+    def test_update_brings_an_old_config_up_to_date(self):
+        conf = os.path.join(self.root, "etc/couchlink/config.toml")
+        with open(conf, "w") as f:
+            f.write(OLD_CONFIG)
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Renamed pc_adresses to pc_addresses", out)
+        self.assertIn("Brought", out)
+        with open(conf + ".bak") as f:
+            self.assertEqual(f.read(), OLD_CONFIG)
+        with open(conf) as f:
+            self.assertIn("watch_pc_power = true", f.read())
+
+    def test_failed_update_leaves_the_config_alone(self):
+        conf = os.path.join(self.root, "etc/couchlink/config.toml")
+        with open(conf, "w") as f:
+            f.write('pc_host = "192.168.1.50"\nold_thing = 1\n')     # pc_mac and more missing
+        code, out = self.install("--update", "--local")
+        self.assertNotEqual(code, 0)
+        self.assertIn("nothing was changed", out)
+        with open(conf) as f:
+            self.assertEqual(f.read(), 'pc_host = "192.168.1.50"\nold_thing = 1\n')
+
     def test_release_marker_not_passed_on_to_the_tests(self):
         probe = os.path.join(self.root, "probe")
         with open(os.path.join(self.src, "test_couchlink.py"), "w") as f:
@@ -955,6 +978,101 @@ class SetupTests(unittest.TestCase):
             f.write(text)
         self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "1", "n"])
         self.assertIn("The config is complete", "\n".join(self.output))
+
+
+OLD_CONFIG = """# A config from before 2.4
+[pc]
+pc_host = "192.168.1.50"
+pc_mac = "aa:bb:cc:dd:ee:01"
+
+[cec]
+pc_adresses = ["12:00"]               # REQUIRED
+pi_address = "40:00"
+
+[behavior]
+on_pc_sleep = "nothing"
+select_soundbar_audio = "false"       # experimental
+
+[timing]
+away_debounce = "5"
+
+[extras]
+old_thing = 1
+"""
+
+
+class MigrateTests(unittest.TestCase):
+    def setUp(self):
+        with open(os.path.join(HERE, "couchlink.example.toml")) as f:
+            self.example = f.read()
+
+    def migrate(self, text):
+        new, changes, problems = couchlink.migrate_config_text(text, self.example)
+        return new, " | ".join(changes), problems
+
+    def test_old_config_is_brought_up_to_date(self):
+        new, changes, problems = self.migrate(OLD_CONFIG)
+        self.assertEqual(problems, [])
+        self.assertIn("Renamed pc_adresses to pc_addresses (it looks like a typo)", changes)
+        self.assertIn('Changed select_soundbar_audio from "false" to false', changes)
+        self.assertIn('Changed away_debounce from "5" to 5', changes)
+        self.assertIn("Commented out old_thing", changes)
+        self.assertIn("Added watch_pc_power to [behavior]", changes)
+        self.assertIn("Added tv_boot_timeout to [timing]", changes)
+        self.assertIn('pc_addresses = ["12:00"]               # REQUIRED', new)    # comment kept
+        self.assertIn("# old_thing = 1", new)
+        settings = couchlink.tomllib.loads(new)
+        self.assertIs(settings["behavior"]["watch_pc_power"], True)
+        self.assertIs(settings["behavior"]["select_soundbar_audio"], False)
+        self.assertEqual(settings["timing"]["away_debounce"], 5)
+
+    def test_second_run_changes_nothing(self):
+        new, _, _ = self.migrate(OLD_CONFIG)
+        again, changes, _ = self.migrate(new)
+        self.assertEqual(changes, "")
+        self.assertEqual(again, new)
+
+    def test_missing_section_is_added(self):
+        new, changes, _ = self.migrate('pc_host = "192.168.1.50"\n')
+        self.assertIn("\n[timing]\n", new)
+        self.assertIn("Added tv_boot_timeout to [timing]", changes)
+
+    def test_required_settings_are_reported_not_added(self):
+        new, changes, problems = self.migrate('pc_host = "192.168.1.50"\n')
+        self.assertNotIn("pc_mac", changes)
+        self.assertTrue(any("pc_mac" in p for p in problems))
+
+    def test_renamed_and_removed_settings(self):
+        renamed, removed = couchlink.RENAMED_SETTINGS, couchlink.REMOVED_SETTINGS
+        couchlink.RENAMED_SETTINGS = {"sleep_action": "on_pc_sleep"}
+        couchlink.REMOVED_SETTINGS = {"legacy_mode": "Removed in 3.0"}
+        self.addCleanup(setattr, couchlink, "RENAMED_SETTINGS", renamed)
+        self.addCleanup(setattr, couchlink, "REMOVED_SETTINGS", removed)
+        new, changes, _ = self.migrate('sleep_action = "standby"\nlegacy_mode = true\n')
+        self.assertIn("Renamed sleep_action to on_pc_sleep", changes)
+        self.assertIn("Commented out legacy_mode: Removed in 3.0", changes)
+        self.assertIn('on_pc_sleep = "standby"', new)
+
+    def test_broken_toml_is_left_alone(self):
+        text = "[pc]\npc_host = \n"
+        new, changes, problems = self.migrate(text)
+        self.assertEqual(new, text)
+        self.assertTrue(problems and "not valid TOML" in problems[0])
+
+    def test_dry_run_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.toml")
+            with open(path, "w") as f:
+                f.write(OLD_CONFIG)
+            out = []
+            self.assertEqual(couchlink.migrate_config(path, dry_run=True, out=out.append), 0)
+            with open(path) as f:
+                self.assertEqual(f.read(), OLD_CONFIG)
+            self.assertFalse(os.path.exists(path + ".bak"))
+            self.assertTrue(out[0].startswith("Would make these changes"))
+            self.assertEqual(couchlink.migrate_config(path, out=out.append), 0)
+            with open(path + ".bak") as f:
+                self.assertEqual(f.read(), OLD_CONFIG)
 
 
 class DocsTests(unittest.TestCase):

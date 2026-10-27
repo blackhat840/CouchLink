@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-CouchLink 2.4
+CouchLink 2.5
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -27,6 +27,7 @@ GPL-2.0-or-later), which it runs as a separate program. See docs/credits.md.
 Run with --help for options. See README.md and docs/ for setup.
 """
 import argparse
+import difflib
 import json
 import os
 import queue
@@ -48,7 +49,7 @@ except ModuleNotFoundError:          # Python < 3.11
     except ModuleNotFoundError:
         tomllib = None
 
-VERSION = "2.4"
+VERSION = "2.5"
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 EX_CONFIG = 78
 
@@ -1674,8 +1675,11 @@ def set_config_value(text, key, value):
     """Set key = value in TOML text, keeping its comment and position. A
     commented-out key is switched on. A missing key is added at the end."""
     rendered = json.dumps(value) if isinstance(value, str) else str(value).lower()
-    line_re = re.compile(rf'^(\s*)#?\s*{key}(\s*)=\s*("[^"]*"|[^#\n]*?)(\s*#.*)?$', re.M)
-    m = line_re.search(text)
+    m = None
+    for prefix in (r"", r"#\s*"):          # an active line first, then a commented-out one
+        m = re.compile(rf'^(\s*){prefix}{key}(\s*)=\s*("[^"]*"|[^#\n]*?)(\s*#.*)?$', re.M).search(text)
+        if m:
+            break
     if m is None:
         return text.rstrip("\n") + f"\n{key} = {rendered}\n"
     indent, pad, _, comment = m.groups()
@@ -1814,6 +1818,142 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
 
 
 # --------------------------------------------------------------------------
+# migrate-config: bring a config from an older version up to date
+# --------------------------------------------------------------------------
+RENAMED_SETTINGS = {}       # old name: new name, for settings renamed in a later version
+REMOVED_SETTINGS = {}       # name: why, for settings a later version dropped
+REQUIRED_SETTINGS = {"pc_host", "pc_mac", "pc_addresses", "pi_address"}
+EXAMPLE_PATHS = [os.path.join(os.path.dirname(os.path.abspath(__file__)), "couchlink.example.toml"),
+                 "/etc/couchlink/config.example.toml"]
+KEY_LINE = r"^[ \t]*{key}[ \t]*=.*$"
+
+
+def example_settings(example_text):
+    """[(section, key, line)] for every active setting in the example config."""
+    found, section = [], None
+    for line in example_text.splitlines():
+        m = re.match(r"\s*\[([A-Za-z0-9_-]+)\]", line)
+        if m:
+            section = m.group(1)
+            continue
+        m = re.match(r"([A-Za-z0-9_]+)\s*=", line)
+        if m:
+            found.append((section, m.group(1), line))
+    return found
+
+
+def add_to_section(text, section, line):
+    """Add line at the end of [section], or add the section at the end of the file."""
+    lines = text.rstrip("\n").split("\n")
+    start = next((i for i, l in enumerate(lines) if re.match(rf"\s*\[{section}\]\s*(#.*)?$", l)), None)
+    if start is None:
+        return "\n".join(lines) + f"\n\n[{section}]\n{line}\n"
+    end = next((i for i in range(start + 1, len(lines)) if re.match(r"\s*\[", lines[i])), len(lines))
+    while end > start + 1 and not lines[end - 1].strip():
+        end -= 1
+    return "\n".join(lines[:end] + [line] + lines[end:]) + "\n"
+
+
+def migrate_config_text(text, example_text):
+    """Returns (new text, changes, problems). changes and problems are lists of
+    sentences for the user. problems are things only the user can fix."""
+    if tomllib is None:
+        return text, [], ["Python 3.11+ (or the 'tomli' package) is needed to read the config file"]
+    try:
+        raw = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as e:
+        return text, [], [f"The config is not valid TOML, so it was not changed: {e}"]
+    flat = {}
+    for key, value in raw.items():
+        flat.update(value if isinstance(value, dict) else {key: value})
+    changes = []
+
+    for key in sorted(set(flat) - set(DEFAULTS)):
+        line_re = re.compile(KEY_LINE.format(key=re.escape(key)), re.M)
+        guess = RENAMED_SETTINGS.get(key)
+        why = ""
+        if guess is None and key not in REMOVED_SETTINGS:
+            close = difflib.get_close_matches(key, list(DEFAULTS), n=1, cutoff=0.85)
+            guess, why = (close[0], " (it looks like a typo)") if close else (None, "")
+        if guess and guess not in flat:
+            text = line_re.sub(lambda m: re.sub(rf"\b{re.escape(key)}\b", guess, m.group(0), count=1), text, count=1)
+            flat[guess] = flat.pop(key)
+            changes.append(f"Renamed {key} to {guess}{why}")
+            continue
+        reason = REMOVED_SETTINGS.get(key) or "CouchLink does not know this setting"
+        text = line_re.sub(lambda m: f"# {reason}. Commented out by --migrate-config:\n# {m.group(0).strip()}",
+                           text, count=1)
+        changes.append(f"Commented out {key}: {reason}")
+
+    for key, value in sorted(flat.items()):
+        default = DEFAULTS.get(key)
+        fixed = None
+        if isinstance(default, bool) and isinstance(value, str) and value.lower() in ("true", "false", "yes", "no"):
+            fixed = value.lower() in ("true", "yes")
+        elif (isinstance(default, (int, float)) and not isinstance(default, bool) and isinstance(value, str)
+              and re.fullmatch(r"\d+(\.\d+)?", value.strip())):
+            fixed = float(value) if "." in value else int(value)
+        if fixed is not None:
+            text = set_config_value(text, key, fixed)
+            changes.append(f"Changed {key} from \"{value}\" to {str(fixed).lower()}")
+
+    for section, key, line in example_settings(example_text):
+        if key not in flat and key in DEFAULTS and key not in REQUIRED_SETTINGS:
+            text = add_to_section(text, section, line)
+            flat[key] = DEFAULTS[key]
+            changes.append(f"Added {key} to [{section}], with its default value")
+
+    problems = []
+    try:
+        settings = dict(DEFAULTS)
+        new = tomllib.loads(text)
+        for key, value in new.items():
+            settings.update(value if isinstance(value, dict) else {key: value})
+        problems = validate(settings)[1]
+    except tomllib.TOMLDecodeError as e:
+        problems = [f"The migrated config is not valid TOML: {e}"]
+    return text, changes, problems
+
+
+def migrate_config(path, dry_run=False, out=print):
+    """Bring the config at path up to date. Returns an exit code."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        out(f"{path} not found")
+        return 1
+    example = next((p for p in EXAMPLE_PATHS if os.path.exists(p)), None)
+    example_text = open(example).read() if example else ""
+    new, changes, problems = migrate_config_text(text, example_text)
+    if any("not valid TOML" in p for p in problems) and new == text:
+        for p in problems:
+            out(p)
+        return 1
+    if not changes:
+        out(f"{path} is up to date for CouchLink {VERSION}. Nothing to change.")
+    else:
+        out(f"{'Would make' if dry_run else 'Making'} these changes to {path}:")
+        for c in changes:
+            out(f"  - {c}")
+        if not dry_run:
+            try:
+                with open(path + ".bak", "w") as f:
+                    f.write(text)
+                with open(path, "w") as f:
+                    f.write(new)
+            except PermissionError:
+                out(f"Can't write {path}. Run it with sudo.")
+                return 1
+            out(f"Saved. The previous version is in {path}.bak.")
+    if problems:
+        out("These need your attention:")
+        for p in problems:
+            out(f"  - {p}")
+    return 0
+
+
+# --------------------------------------------------------------------------
 # main
 # --------------------------------------------------------------------------
 
@@ -1825,7 +1965,12 @@ def main(argv=None):
     ap.add_argument("--check-config", action="store_true", help="validate the config and exit")
     ap.add_argument("--setup", action="store_true",
                     help="ask for the settings that don't need CEC addresses and save them")
+    ap.add_argument("--migrate-config", action="store_true",
+                    help="bring a config from an older version up to date, explaining each change "
+                         "(with --dry-run, only show the changes)")
     args = ap.parse_args(argv)
+    if args.migrate_config:
+        sys.exit(migrate_config(args.config, dry_run=args.dry_run))
     if args.setup:
         if os.geteuid() != 0:
             print("Run it with sudo: sudo couchlink --setup")

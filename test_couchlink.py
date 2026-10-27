@@ -722,10 +722,13 @@ class InstallerTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
 
-    def install(self, *args, api=None):
-        env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}
+    def install(self, *args, api=None, **extra_env):
+        # These tests run inside a real update too, so drop anything the
+        # installer that started them may have set.
+        env = {k: v for k, v in os.environ.items()
+               if "proxy" not in k.lower() and not k.startswith("COUCHLINK_")}
         env.update(ROOT=self.root, INSTALL_TEST="1", COUCHLINK_API=api or f"{self.base}/api",
-                   COUCHLINK_ARCHIVE=f"{self.base}/archive/{{tag}}.tar.gz")
+                   COUCHLINK_ARCHIVE=f"{self.base}/archive/{{tag}}.tar.gz", **extra_env)
         r = subprocess.run(["bash", os.path.join(self.src, "install.sh"), *args], env=env,
                            stdin=subprocess.DEVNULL, capture_output=True, text=True,
                            timeout=120, start_new_session=True)
@@ -788,12 +791,27 @@ class InstallerTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("Could not reach GitHub", out)
 
+    def test_release_marker_not_passed_on_to_the_tests(self):
+        probe = os.path.join(self.root, "probe")
+        with open(os.path.join(self.src, "test_couchlink.py"), "w") as f:
+            f.write("import os\n"
+                    f"open({probe!r}, 'w').write(os.environ.get('COUCHLINK_RELEASE_TAG', 'unset'))\n"
+                    "print('Ran 1 test')\nprint('OK')\n")
+        code, out = self.install("--update", COUCHLINK_RELEASE_TAG="v9.9")
+        self.assertEqual(code, 0, out)
+        self.assertIn("(release v9.9)", out)
+        self.assertIsNone(self.stub_ran())               # installed locally, nothing downloaded
+        with open(probe) as f:
+            self.assertEqual(f.read(), "unset")
+
     def test_local_update_installs_files_next_to_the_script(self):
         code, out = self.install("--update", "--local")
         self.assertEqual(code, 0, out)
         self.assertIsNone(self.stub_ran())
         with open(os.path.join(self.root, "usr/local/bin/couchlink")) as f:
             self.assertIn(f'VERSION = "{couchlink.VERSION}"', f.read())
+        # Logs stay inside the test root, so they never clash with a real install's.
+        self.assertTrue(os.path.exists(os.path.join(self.root, "tmp/couchlink-check.log")))
 
 
 class PcNameTests(unittest.TestCase):

@@ -59,8 +59,12 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
-# Set when a newer installer runs this one from a downloaded release.
-[ -z "${COUCHLINK_RELEASE_TAG:-}" ] || LOCAL=1
+# Set when a newer installer runs this one from a downloaded release. Read it
+# once and remove it, so the tests and other programs started below do not
+# inherit it.
+RELEASE_TAG="${COUCHLINK_RELEASE_TAG:-}"
+unset COUCHLINK_RELEASE_TAG
+[ -z "$RELEASE_TAG" ] || LOCAL=1
 
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mWARNING: %s\033[0m\n' "$*"; }
@@ -148,6 +152,11 @@ CONF_DIR="$ROOT/etc/couchlink"
 CONF="$CONF_DIR/config.toml"
 UNIT_DIR="$ROOT/etc/systemd/system"
 OLD_VER=""
+# Under a test root the logs go there too, so two installers never share one.
+LOG_DIR="$ROOT/tmp"
+mkdir -p "$LOG_DIR"
+TEST_LOG="$LOG_DIR/couchlink-test.log"
+CHECK_LOG="$LOG_DIR/couchlink-check.log"
 
 # ---------------------------------------------------------------- releases on GitHub
 if [ "$LIST" = 1 ]; then
@@ -212,7 +221,7 @@ if [ "$UPDATE" = 1 ]; then
     if [ "$TEST_MODE" != 1 ]; then
         command -v cec-client >/dev/null || die "cec-client is missing. Run without --update to reinstall packages."
     fi
-    say "Updating Couchlink ${OLD_VER:-?} -> ${NEW_VER:-?}${COUCHLINK_RELEASE_TAG:+ (release $COUCHLINK_RELEASE_TAG)}"
+    say "Updating Couchlink ${OLD_VER:-?} -> ${NEW_VER:-?}${RELEASE_TAG:+ (release $RELEASE_TAG)}"
 fi
 
 # ---------------------------------------------------------------- python
@@ -235,11 +244,11 @@ fi
 # ---------------------------------------------------------------- tests
 if [ -f "$HERE/test_couchlink.py" ]; then
     say "Running offline tests"
-    if ( cd "$HERE" && python3 test_couchlink.py ) >/tmp/couchlink-test.log 2>&1; then
-        grep -E "^Ran|^OK" /tmp/couchlink-test.log
+    if ( cd "$HERE" && python3 test_couchlink.py ) > "$TEST_LOG" 2>&1; then
+        grep -aE "^Ran|^OK" "$TEST_LOG"
     else
-        tail -25 /tmp/couchlink-test.log
-        die "Offline tests failed, so nothing was installed. Full log: /tmp/couchlink-test.log"
+        tail -25 "$TEST_LOG"
+        die "Offline tests failed, so nothing was installed. Full log: $TEST_LOG"
     fi
 else
     warn "test_couchlink.py not found, skipping offline tests"
@@ -248,10 +257,10 @@ fi
 # ---------------------------------------------------------------- update pre-check
 if [ "$UPDATE" = 1 ]; then
     say "Checking your config against the new version"
-    if python3 "$HERE/couchlink.py" --config "$CONF" --check-config >/tmp/couchlink-check.log 2>&1; then
+    if python3 "$HERE/couchlink.py" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
         echo "Config OK with ${NEW_VER:-the new version}"
     else
-        grep CONFIG /tmp/couchlink-check.log || cat /tmp/couchlink-check.log
+        grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
         die "Your config doesn't pass with the new version, so nothing was changed. Fix it (compare with couchlink.example.toml) and run --update again."
     fi
 fi
@@ -430,10 +439,10 @@ fi
 
 # ---------------------------------------------------------------- config check
 say "Checking the config"
-if python3 "$BIN" --config "$CONF" --check-config >/tmp/couchlink-check.log 2>&1; then
+if python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
     echo "Config OK"
 else
-    grep CONFIG /tmp/couchlink-check.log || cat /tmp/couchlink-check.log
+    grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
     echo "(Expected on a fresh install: fill in the placeholders, see below.)"
 fi
 

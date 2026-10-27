@@ -16,8 +16,11 @@ It shows:
   [Sleep, power-off and restarts](how-it-works.md#sleep-power-off-and-restarts)
   for how CouchLink tells them apart. The name comes from `pc_name`, or from the PC's
   own hostname if that is not set.
-- TV power and input, whether the PC answers on the network, Wake-on-LAN and
-  suspend attempts, the input guard, the sleep check and uptime.
+- TV power and input, and how long the TV has been on that input.
+- Whether the PC is up, asleep or off, and for how long. If it was already
+  like that when CouchLink started, it says "for at least".
+- Wake-on-LAN and suspend attempts, the input guard, the sleep check and what
+  happens after it, and how long CouchLink has been running.
 - Recent events and raw CEC traffic, each in its own tab.
 - Links to the raw JSON and to this repository.
 

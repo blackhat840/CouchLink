@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-CouchLink 2.5
+CouchLink 2.5.1
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -49,7 +49,7 @@ except ModuleNotFoundError:          # Python < 3.11
     except ModuleNotFoundError:
         tomllib = None
 
-VERSION = "2.5"
+VERSION = "2.5.1"
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 EX_CONFIG = 78
 
@@ -371,6 +371,7 @@ class Controller:
         self.pc_seen_up = False         # PC answered ping during this stay on its input
         self.pc_offline_since = None    # PC dropped off while on screen, waiting to confirm sleep
         self.pc_down_since = None       # PC stopped answering ping
+        self.first_ping_at = None       # first ping result, so "since" times before it are unknown
         self.power_note = None          # (what, time): the PC announced sleep, reboot or poweroff
         self.power_link = None          # (state, time): the power watcher's SSH session, up | closed | lost
         self.timers = []                # (due, description, function)
@@ -439,7 +440,7 @@ class Controller:
         """Record the TV's input. source: tv | self | startup | standby | power."""
         prev = self.tv_input
         if addr == prev:
-            log("INPUT", f"{self.input_name(addr)} re-announced{detail}")
+            log("INPUT", f"TV input unchanged: {self.input_name(addr)}{detail}")
             return False
         self.tv_input = addr
         self.input_since = self.now()
@@ -526,8 +527,8 @@ class Controller:
                 and f"{p[0]}:{p[1]}" == self.cfg.pi_address):
             return
         if self.tv_boot_started is None and self.tv_input in self.pc_set and self.pc_online:
-            log("RECOVER", f"cec-client announced the Pi's own input ({self.input_name(self.cfg.pi_address)}) "
-                           "while the PC is awake. Pulling the TV back to the PC")
+            log("RECOVER", f"cec-client made the Pi the active source ({self.input_name(self.cfg.pi_address)}) "
+                           "while the PC is on. Switching the TV back to the PC")
             self.pull_back("undoing a switch to the Pi's own input")
 
     def on_announcement(self, initiator, opcode, addr):
@@ -539,25 +540,25 @@ class Controller:
         t = self.now()
         if self.tv_input in self.pc_set and addr not in self.pc_set:
             if self.tv_boot_started is not None:
-                log("RECOVER", f"{self.input_name(addr)} announced while the TV is starting{detail}. "
-                               "Ignored: the PC's input is claimed once the TV reports that it is on")
+                log("RECOVER", f"Ignoring {self.input_name(addr)}{detail}: the TV is still starting. "
+                               "It is switched to the PC once it reports that it is on")
                 return
             if t < self.tv_settle_until:
-                log("RECOVER", f"{self.input_name(addr)} announced while the TV finishes starting{detail}. "
-                               "Pulling the TV back to the PC")
+                log("RECOVER", f"TV switched to {self.input_name(addr)} while it was still starting{detail}. "
+                               "Switching it back to the PC")
                 self.pull_back("undoing a switch made while the TV was starting")
                 return
             if addr == self.cfg.pi_address and self.pc_online:
-                log("RECOVER", f"{self.input_name(addr)} announced while the PC is awake{detail}. "
-                               "The Pi's own input is never kept while the PC is on: pulling the TV back")
+                log("RECOVER", f"TV switched to {self.input_name(addr)} while the PC is on{detail}. "
+                               "Switching it back to the PC")
                 self.pull_back("undoing a switch to the Pi's own input")
                 return
         if (self.tv_input in self.pc_set and addr in self.suspects and t < self.guard_until
                 and self.guard_count < self.cfg.max_guard_recoveries):
             self.guard_count += 1
-            log("RECOVER", f"{self.input_name(addr)} announced shortly after switching to the PC{detail}. "
-                           f"Treating it as automatic: pulling the TV back to the PC "
-                           f"({self.guard_count}/{self.cfg.max_guard_recoveries}), not suspending")
+            log("RECOVER", f"TV switched to {self.input_name(addr)} right after switching to the PC{detail}. "
+                           f"Treating it as automatic and switching back "
+                           f"({self.guard_count}/{self.cfg.max_guard_recoveries}). The PC stays awake")
             self.after(self.cfg.guard_delay, "guard",
                        lambda: self.assert_pc_input("undoing an automatic switch after wake"))
             return
@@ -672,6 +673,7 @@ class Controller:
         if online:
             self.lookup_pc_name()
         if prev is None:
+            self.first_ping_at = t
             if online:
                 self.pc_online_since = t
             else:
@@ -689,9 +691,9 @@ class Controller:
                 log("SUSPEND", "Confirmed: the PC went to sleep")
             elif self.desired() == "awake" and self.pc_seen_up:
                 self.pc_offline_since = t
-                log("WATCHER", f"PC dropped off while on screen. If it stays offline for "
-                               f"{self.cfg.pc_sleep_confirm}s it was put to sleep or turned off on purpose, "
-                               f"and it won't be woken again")
+                log("WATCHER", f"PC went offline while on screen. If it stays offline for "
+                               f"{self.cfg.pc_sleep_confirm}s, CouchLink takes it as put to sleep or "
+                               f"turned off on purpose and won't wake it again")
             return
         self.pc_online_since = t
         was = self.power_note[0] if self.power_note else None
@@ -705,15 +707,15 @@ class Controller:
         ours = self.last_wol is not None and t - self.last_wol <= self.cfg.wake_correlation
         d = self.desired()
         if d == "awake":
-            log("WATCHER", "PC is now reachable" + (" (woken by us)" if ours else ""))
+            log("WATCHER", "PC is now reachable" + (" (woken by CouchLink)" if ours else ""))
             # Its HDMI outputs just came alive. This is when a soundbar or TV may switch by itself.
             self.guard_until = max(self.guard_until, t + self.cfg.guard_window)
             self.after(2.0, "soundbar audio", self.request_soundbar_audio)
         elif ours:
-            log("WATCHER", "PC came online after our WoL, but the TV has left its input. "
-                           "It will be suspended")
+            log("WATCHER", "PC woke up from CouchLink's Wake-on-LAN, but the TV has left its input. "
+                           "Putting it back to sleep")
         else:
-            log("WATCHER", "PC came online by itself")
+            log("WATCHER", "PC woke up by itself")
             self.auto_switch_to_pc()
 
     def handle_pc_slept(self):
@@ -740,10 +742,11 @@ class Controller:
         tv_off = self.tv_power == "standby" or self.tv_input == "standby"
         if mode == "never" or (mode == "if_tv_on" and tv_off):
             log("WATCHER", f"Not switching the TV (auto_switch_on_pc_wake = \"{mode}\"). "
-                           "The PC will be suspended if the TV stays elsewhere")
+                           "The PC goes back to sleep if the TV stays on another input")
             return
         if self.last_auto_switch is not None and t - self.last_auto_switch < self.cfg.auto_switch_cooldown:
-            log("WATCHER", "Not switching the TV: auto-switch cooldown")
+            log("WATCHER", f"Not switching the TV: it was switched to the PC less than "
+                           f"{self.cfg.auto_switch_cooldown}s ago (auto_switch_cooldown)")
             return
         self.last_auto_switch = t
         self.cec("on 0", "PC woke by itself: turning the TV on")
@@ -781,7 +784,7 @@ class Controller:
     def on_suspend_done(self, returncode, detail):
         self.suspend_inflight = False
         if returncode == 0:
-            log("SUSPEND", "Suspend command accepted, waiting for the PC to drop off the network")
+            log("SUSPEND", "Suspend command accepted, waiting for the PC to go offline")
         elif returncode == 255:
             log("SUSPEND", f"SSH ended with 255 ({detail or 'connection closed'}). That can be "
                            "normal if the PC suspended mid-command. Checking with ping", level="WARN")
@@ -864,8 +867,8 @@ class Controller:
         if self.last_suspend is not None and t - self.last_suspend < self.cfg.suspend_retry_interval:
             return
         if self.suspend_attempts >= self.cfg.max_suspend_attempts:
-            log("SUSPEND", f"Giving up after {self.suspend_attempts} attempts. The PC is still "
-                           f"reachable while the TV is on {self.input_name(self.tv_input)}", level="ERROR")
+            log("SUSPEND", f"Giving up after {self.suspend_attempts} suspend attempts. The PC still "
+                           f"answers while the TV is on {self.input_name(self.tv_input)}", level="ERROR")
             self.sleep_gave_up = True
             return
         self.suspend_attempts += 1
@@ -877,6 +880,16 @@ class Controller:
         self.actions.suspend()
 
     # ---- status ---------------------------------------------------------
+    def pc_state_started(self):
+        """When the PC last came up or went down, as far as CouchLink has seen."""
+        if self.pc_online is None:
+            return None
+        return self.pc_online_since if self.pc_online else self.pc_down_since
+
+    def pc_state_seconds(self, t):
+        since = self.pc_state_started()
+        return int(t - since) if since is not None else None
+
     def snapshot(self):
         t = self.now()
         return {
@@ -888,6 +901,9 @@ class Controller:
             "pc_should_be": self.desired() or "unknown",
             "pc_reachable": self.pc_online,
             "pc_power": self.power_state() or "unknown",
+            "pc_state_seconds": self.pc_state_seconds(t),
+            "pc_state_since_start": (self.first_ping_at is not None
+                                     and self.pc_state_started() == self.first_ping_at),
             "wol_attempts": self.wol_attempts,
             "suspend_attempts": self.suspend_attempts,
             "guard_active": t < self.guard_until and self.tv_input in self.pc_set,
@@ -899,6 +915,9 @@ class Controller:
             "pc_name": self.pc_name,
             "pc_inputs": [self.input_name(a) for a in self.cfg.pc_addresses],
             "on_pc_sleep": self.cfg.on_pc_sleep,
+            "on_pc_sleep_target": (self.input_name(self.cfg.pc_sleep_switch_to)
+                                   if self.cfg.pc_sleep_switch_to else None),
+            "power_poll_interval": self.cfg.power_poll_interval,
             "last_wol_seconds_ago": int(t - self.last_wol) if self.last_wol is not None else None,
             "last_suspend_seconds_ago": int(t - self.last_suspend) if self.last_suspend is not None else None,
             "uptime_seconds": int(t - self.started_at),
@@ -1346,6 +1365,8 @@ footer a { color: var(--muted); }
   .orb svg { width: 34px; height: 34px; }
   .state { font-size: 28px; }
   .sub { font-size: 14px; }
+  .sub .sep { display: none; }
+  .sub .muted { display: block; }
   .path { margin-left: -80px; }
   .node { padding: 7px 9px; font-size: 11px; }
   .grid { gap: 10px; }
@@ -1409,7 +1430,7 @@ footer a { color: var(--muted); }
     <div class="panel tile" id="tSus"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Suspend</div><div class="value" id="vSus">-</div><div class="hint" id="hSus">-</div></div>
     <div class="panel tile" id="tGuard"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>Input guard</div><div class="value" id="vGuard">-</div><div class="hint" id="hGuard">-</div></div>
     <div class="panel tile" id="tSleep"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>Sleep check</div><div class="value" id="vSleep">-</div><div class="hint" id="hSleep">-</div></div>
-    <div class="panel tile" id="tUp"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
+    <div class="panel tile" id="tUp"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>CouchLink uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
   </section>
 
   <section class="panel console">
@@ -1439,11 +1460,18 @@ footer a { color: var(--muted); }
     if (s === null || s === undefined) return "-";
     s = Math.max(0, Math.floor(s));
     var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    var days = Math.floor(h / 24);
+    if (days) return days + "d " + (h % 24) + "h";
     if (h) return h + "h " + m + "m";
     if (m) return m + "m " + x + "s";
     return x + "s";
   }
-  function ago(s) { return (s === null || s === undefined) ? "never" : dur(s) + " ago"; }
+  function lastSent(s) { return (s === null || s === undefined) ? "None sent yet" : "Last sent " + dur(s) + " ago"; }
+  function every(s) {
+    if (!s) return "Checked at startup";
+    if (s % 60 === 0) return s === 60 ? "Checked every minute" : "Checked every " + s / 60 + " minutes";
+    return "Checked every " + s + "s";
+  }
   function set(id, text, cls) {
     var el = $(id);
     el.textContent = text;
@@ -1455,14 +1483,14 @@ footer a { color: var(--muted); }
     var want = d.pc_should_be, up = d.pc_reachable, power = d.pc_power;
     var waiting = want === "awake" ? "The TV is still on the PC's input" : "Waiting for the TV to switch to it";
     if (want === "awake" && up) return ["online", "Online", "Ready to play"];
-    if (want === "asleep" && up) return ["sleeping", "Going to sleep", "TV is elsewhere, suspending the PC"];
-    if (power === "restarting") return ["waking", "Restarting", "The PC is restarting"];
-    if (want === "awake" && d.wol_attempts) return ["waking", "Waking up", "Sending Wake-on-LAN"];
+    if (want === "asleep" && up) return ["sleeping", "Going to sleep", "The TV is on another input"];
+    if (power === "restarting") return ["waking", "Restarting", "Waiting for the PC to come back"];
+    if (want === "awake" && d.wol_attempts) return ["waking", "Waking up", "Sending Wake-on-LAN to the PC"];
     if (power === "off") return ["off", "Off", waiting];
     if (power === "asleep") return ["asleep", "Asleep", waiting];
-    if (want === "awake") return ["waking", "Waking up", "Sending Wake-on-LAN"];
+    if (want === "awake") return ["waking", "Waking up", "Sending Wake-on-LAN to the PC"];
     if (want === "asleep") return ["asleep", "Asleep or off", waiting];
-    return ["unknown", "Standing by", "Waiting for the TV to announce an input"];
+    return ["unknown", "Standing by", "Waiting to hear which input the TV is on"];
   }
 
   function render(d) {
@@ -1475,10 +1503,8 @@ footer a { color: var(--muted); }
     var sub = $("sub");
     sub.textContent = "";
     sub.appendChild(document.createTextNode(v[2]));
-    var hint = document.createElement("span");
-    hint.className = "muted";
-    hint.textContent = "  |  " + (d.pc_host || "PC");
-    sub.appendChild(hint);
+    sub.appendChild(span("sep", "  |  "));
+    sub.appendChild(span("muted", d.pc_host || "PC"));
 
     $("version").textContent = "v" + d.version;
     $("dry").hidden = !d.dry_run;
@@ -1494,7 +1520,7 @@ footer a { color: var(--muted); }
 
     var power = d.tv_power === "on" ? ["On", "good"] : d.tv_power === "standby" ? ["Standby", "calm"] : ["Unknown", "dim"];
     set("vTv", power[0], power[1]);
-    $("hTv").textContent = "Checked every minute";
+    $("hTv").textContent = every(d.power_poll_interval);
     accent("tTv", d.tv_power === "on" ? "var(--green)" : null);
 
     set("vIn", d.tv_input, onPc ? "good" : "");
@@ -1504,15 +1530,16 @@ footer a { color: var(--muted); }
     var offline = {asleep: "Asleep", off: "Off", restarting: "Restarting"}[d.pc_power] || "Offline";
     set("vNet", d.pc_reachable === null ? "Checking" : d.pc_reachable ? "Reachable" : offline,
         d.pc_reachable ? "good" : d.pc_reachable === false ? "calm" : "dim");
-    $("hNet").textContent = d.pc_host || "-";
+    $("hNet").textContent = d.pc_state_seconds === null || d.pc_state_seconds === undefined ? "-"
+        : (d.pc_state_since_start ? "for at least " : "for ") + dur(d.pc_state_seconds);
     accent("tNet", d.pc_reachable ? "var(--green)" : null);
 
     set("vWol", d.wol_attempts ? d.wol_attempts + " sent" : "Idle", d.wol_attempts ? "cool" : "dim");
-    $("hWol").textContent = "last " + ago(d.last_wol_seconds_ago);
+    $("hWol").textContent = lastSent(d.last_wol_seconds_ago);
     accent("tWol", d.wol_attempts ? "var(--cyan)" : null);
 
     set("vSus", d.suspend_attempts ? d.suspend_attempts + " sent" : "Idle", d.suspend_attempts ? "warn" : "dim");
-    $("hSus").textContent = "last " + ago(d.last_suspend_seconds_ago);
+    $("hSus").textContent = lastSent(d.last_suspend_seconds_ago);
     accent("tSus", d.suspend_attempts ? "var(--amber)" : null);
 
     set("vGuard", d.guard_active ? "Armed" : "Idle", d.guard_active ? "cool" : "dim");
@@ -1521,11 +1548,15 @@ footer a { color: var(--muted); }
 
     var left = d.pc_sleep_check_seconds_left;
     set("vSleep", left === null || left === undefined ? "Idle" : left + "s", left === null || left === undefined ? "dim" : "warn");
-    $("hSleep").textContent = "When asleep: " + (d.on_pc_sleep || "nothing");
+    $("hSleep").textContent = {switch: "Then: TV to " + (d.on_pc_sleep_target || "another input"),
+                               standby: "Then: TV off"}[d.on_pc_sleep] || "Then: TV left alone";
     accent("tSleep", left === null || left === undefined ? null : "var(--amber)");
 
     set("vUp", dur(d.uptime_seconds), "");
-    $("hUp").textContent = "PC input " + (d.pc_inputs || []).join(", ");
+    var started = new Date(Date.now() - d.uptime_seconds * 1000);
+    var at = started.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (d.uptime_seconds >= 86400) at = started.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + at;
+    $("hUp").textContent = "Since " + at;
 
     $("cLog").textContent = (d.recent_log || []).length;
     $("cCec").textContent = (d.recent_traffic || []).length;

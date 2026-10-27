@@ -321,7 +321,7 @@ class FlowTests(unittest.TestCase):
         s.run(25)                                       # past guard
         s.ev(msg("0f:86:00:00"))                        # user leaves before PC is up
         s.run(2)
-        s.pc(True)                                      # PC finishes waking from our WoL
+        s.pc(True)                                      # PC finishes waking from CouchLink's WoL
         s.run(6)
         self.assertNotIn("on 0", s.act.cec)
         self.assertEqual(s.act.suspends, 1)
@@ -1227,6 +1227,28 @@ class PcPowerTests(unittest.TestCase):
         self.assertEqual(s.act.suspends, 1)
         s.pc(False)
         self.assertEqual(self.power(s), "asleep")
+
+    def test_up_and_down_time(self):
+        s = Sim(**REAL)
+        snap = s.ctl.snapshot()
+        self.assertIsNone(snap["pc_state_seconds"])     # no ping yet
+        s.pc(True)
+        s.run(100)
+        snap = s.ctl.snapshot()
+        self.assertEqual(snap["pc_state_seconds"], 100)
+        self.assertTrue(snap["pc_state_since_start"])   # it was already up when CouchLink started
+        s.pc(False)
+        s.run(30)
+        snap = s.ctl.snapshot()
+        self.assertEqual(snap["pc_state_seconds"], 30)
+        self.assertFalse(snap["pc_state_since_start"])  # CouchLink saw it go down
+        s.pc(True)
+        self.assertEqual(s.ctl.snapshot()["pc_state_seconds"], 0)
+
+    def test_status_page_describes_the_sleep_action(self):
+        snap = Sim(**REAL).ctl.snapshot()
+        self.assertEqual((snap["on_pc_sleep"], snap["on_pc_sleep_target"]), ("switch", "HDMI 1.1"))
+        self.assertEqual(snap["power_poll_interval"], 60)
 
     def test_setting_validated(self):
         _, problems = couchlink.validate(dict(BASE, watch_pc_power="yes"))

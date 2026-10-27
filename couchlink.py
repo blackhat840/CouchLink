@@ -2343,10 +2343,12 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
                   "Use 40 characters or fewer.", blank_ok=True)
 
     out("")
-    out("When the PC wakes by itself, for example from a controller:")
+    out("When the PC wakes by itself, for example from a controller or its power button:")
     out("  1) turn the TV on and switch it to the PC")
     out("  2) switch the TV to the PC only if the TV is already on")
-    out("  3) leave the TV alone")
+    out("  3) leave the TV alone. The PC goes back to sleep unless you switch the TV to it")
+    out("This is not for remote play. To stream to another device, use Wake PC on the status")
+    out("page, which keeps the PC awake without the TV.")
     wake_modes = {"1": "always", "2": "if_tv_on", "3": "never"}
     default = {v: k for k, v in wake_modes.items()}.get(current.get("auto_switch_on_pc_wake"), "1")
     wake_mode = wake_modes[prompt("Choose 1, 2 or 3", default, lambda a: a in wake_modes, "Enter 1, 2 or 3.")]

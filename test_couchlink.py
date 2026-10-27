@@ -67,6 +67,11 @@ def msg(text):
     return ("cec", couchlink.parse_rx(f"TRAFFIC: [ 1]\t>> {text}"))
 
 
+def out(text):
+    """A message the Pi sent, as cec-client logs it."""
+    return ("cec_out", couchlink.parse_tx(f"TRAFFIC: [ 1]\t<< {text}"))
+
+
 class Sim:
     def __init__(self, **overrides):
         s = dict(BASE)
@@ -287,6 +292,8 @@ class FlowTests(unittest.TestCase):
         s.pc(True)
         s.run(2)
         self.assertIn("on 0", s.act.cec)
+        self.assertNotIn("tx 1F:82:30:00", s.act.cec)   # waits for the TV to start
+        s.ev(msg("01:90:00"))                           # TV says: on
         self.assertIn("tx 1F:82:30:00", s.act.cec)
         self.assertEqual(s.ctl.tv_input, "30:00")
         s.run(30)
@@ -371,6 +378,8 @@ class FlowTests(unittest.TestCase):
 
     def test_own_transmissions_and_junk_ignored(self):
         self.assertIsNone(couchlink.parse_rx("TRAFFIC: [ 1]\t<< 1f:82:30:00"))
+        self.assertIsNone(couchlink.parse_tx("TRAFFIC: [ 1]\t>> 0f:86:30:00"))
+        self.assertEqual(couchlink.parse_tx("TRAFFIC: [ 1]\t<< 1f:82:40:00").params, ["40", "00"])
         self.assertIsNone(couchlink.parse_rx("TRAFFIC: [ 1]\t>> 01"))
         self.assertIsNone(couchlink.parse_rx("NOTICE: connected"))
         self.assertEqual(couchlink.parse_key("DEBUG: key pressed: fast forward (49)"), "fast forward")
@@ -502,6 +511,132 @@ class PcSleepTests(unittest.TestCase):
         s.pc(False)
         s.ev(msg("0f:36"))                              # TV off
         self.assertEqual(s.ctl.tv_input, "standby")
+
+
+class TvBootTests(unittest.TestCase):
+    """The PC wakes by itself while the TV is off (issue 1)."""
+
+    def off_then_controller_wake(self, **overrides):
+        s = Sim(**dict(REAL, **overrides))
+        s.pc(False)
+        s.ev(msg("0f:36"))                              # TV off
+        s.run(30)
+        s.pc(True)                                      # controller wakes the PC
+        return s
+
+    def test_trace_replay_controller_wake_with_tv_off(self):
+        """The sequence from issue 1. No wake.log was attached, so the TV's boot
+        traffic below is assumed from the issue: a standby report while it starts,
+        the route to the streamer on HDMI 1, then a switch to the Pi's own input
+        caused by Image View On, with cec-client answering for the Pi."""
+        s = self.off_then_controller_wake()
+        self.assertIn("on 0", s.act.cec)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(2)
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)   # not claimed while the TV starts
+        self.assertGreaterEqual(s.act.cec.count("pow 0"), 1)
+        s.ev(msg("01:90:01"))                           # still in standby while starting
+        s.ev(msg("0f:80:10:00:11:00"))                  # TV boots on HDMI 1 -> streamer
+        s.run(2)
+        s.ev(msg("01:90:02"))                           # turning on
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)
+        s.ev(msg("01:90:00"))                           # TV is on
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 1)
+        s.ev(msg("0f:86:40:00"))                        # TV jumps to the Pi's input (HDMI 4)
+        s.ev(out("1f:82:40:00"))                        # cec-client answers for the Pi
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(10)
+        # first claim + 3 re-claims + one pull-back for the switch to the Pi
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 5)
+        s.ev(msg("0f:80:40:00:10:00"))                  # TV back on HDMI 1
+        s.ev(msg("5f:81:12:00"))                        # soundbar wakes on the PC's input
+        s.run(60)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.suspends, 0)
+        self.assertEqual(s.act.wols, 0)
+        claims = s.act.cec.count("tx 1F:82:12:00")
+        s.ev(msg("0f:80:10:00:40:00"))                  # late switch to the Pi, guard long over
+        s.run(2)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), claims + 1)
+
+    def test_tv_never_reports_on_claims_after_timeout(self):
+        s = self.off_then_controller_wake(tv_boot_timeout=10)
+        s.run(9)
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)
+        self.assertGreaterEqual(s.act.cec.count("pow 0"), 4)   # kept asking
+        s.run(2)
+        self.assertIn("tx 1F:82:12:00", s.act.cec)
+        s.run(10)
+        s.ev(msg("01:90:01"))                           # TV really is off
+        s.run(6)
+        self.assertEqual(s.ctl.tv_input, "standby")
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_tv_turned_off_while_starting_cancels(self):
+        s = self.off_then_controller_wake()
+        s.run(2)
+        s.ev(msg("0f:36"))                              # user turns the TV off again
+        s.run(30)
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_switch_while_settling_pulled_back(self):
+        s = self.off_then_controller_wake(tv_boot_reclaims=2, tv_boot_reclaim_interval=3)
+        s.ev(msg("01:90:00"))
+        s.run(1)
+        s.ev(msg("0f:80:10:00:11:00"))                  # streamer route right after power on
+        s.ev(msg("4f:82:11:00"))                        # and the streamer claims the TV
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(10)
+        # first claim + 2 re-claims + one pull-back
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 4)
+        s.ev(msg("0f:80:10:00:11:00"))                  # later: a real switch to the streamer
+        s.run(30)
+        self.assertEqual(s.ctl.tv_input, "11:00")
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_tv_already_on_switches_without_waiting(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))                        # TV on, showing the streamer
+        s.ev(msg("01:90:00"))
+        s.run(30)
+        s.pc(True)
+        s.run(2)
+        self.assertIn("tx 1F:82:12:00", s.act.cec)
+        self.assertFalse(s.ctl.snapshot()["tv_starting"])
+
+    def test_pi_input_never_kept_while_pc_awake(self):
+        s = Sim(**REAL)
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(60)                                       # guard window long over
+        s.ev(msg("0f:80:10:00:40:00"))
+        s.ev(out("1f:82:40:00"))
+        s.ev(msg("0f:86:40:00"))
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(3)
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 2)  # claim + one pull-back
+        s.run(30)
+        self.assertEqual(s.act.suspends, 0)
+
+    def test_pi_input_accepted_while_pc_asleep(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))
+        s.run(30)
+        s.ev(msg("0f:80:10:00:40:00"))
+        s.ev(out("1f:82:40:00"))
+        self.assertEqual(s.ctl.tv_input, "40:00")
+        self.assertFalse(any(c.startswith("tx 1F:82") for c in s.act.cec))
+
+    def test_boot_settings_validated(self):
+        _, problems = couchlink.validate(dict(BASE, tv_boot_timeout=-1, tv_boot_reclaims=1.5))
+        text = " ".join(problems)
+        self.assertIn("tv_boot_timeout", text)
+        self.assertIn("tv_boot_reclaims", text)
 
 
 class PcNameTests(unittest.TestCase):

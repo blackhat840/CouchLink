@@ -99,6 +99,9 @@ DEFAULTS = {
     "guard_delay": 1.5,
     "max_guard_recoveries": 2,
     "auto_switch_cooldown": 30,
+    "tv_boot_timeout": 20,              # PC woke with the TV off: wait this long for the TV to report on
+    "tv_boot_reclaims": 3,              # then claim the PC's input this many more times
+    "tv_boot_reclaim_interval": 2,      # this far apart, while the TV finishes starting
     "pc_sleep_confirm": 12,             # PC must stay offline this long before it counts as asleep
     "power_poll_interval": 60,          # 0 disables periodic TV power checks
     "power_query_delays": [2, 8],
@@ -126,6 +129,7 @@ LOGICAL_NAMES = {
 ANNOUNCE_OPCODES = {"82": "Active Source", "86": "Set Stream Path",
                     "80": "Routing Change", "81": "Routing Information"}
 POWER_STATUS = {"00": "on", "01": "standby", "02": "turning on", "03": "turning off"}
+TV_BOOT_POLL = 2            # seconds between "is the TV on yet?" queries while it starts
 
 LOG_RING = deque(maxlen=200)
 TRAFFIC_RING = deque(maxlen=100)
@@ -264,11 +268,12 @@ def validate(settings):
 
     for key in ("away_debounce", "suspend_retry_interval", "wol_retry_interval", "wake_correlation",
                 "guard_window", "guard_delay", "auto_switch_cooldown", "power_poll_interval",
-                "pc_sleep_confirm",
+                "pc_sleep_confirm", "tv_boot_timeout", "tv_boot_reclaim_interval",
                 "ping_interval", "tick_interval"):
         if not isinstance(s[key], (int, float)) or isinstance(s[key], bool) or s[key] < 0:
             problems.append(f"{key} must be a number >= 0")
-    for key in ("max_suspend_attempts", "max_wol_attempts", "max_guard_recoveries", "wol_port"):
+    for key in ("max_suspend_attempts", "max_wol_attempts", "max_guard_recoveries", "wol_port",
+                "tv_boot_reclaims"):
         if not isinstance(s[key], int) or isinstance(s[key], bool) or s[key] < 0:
             problems.append(f"{key} must be a whole number >= 0")
     if not isinstance(s["power_query_delays"], list) or \
@@ -287,12 +292,22 @@ def validate(settings):
 # CEC message parsing
 # --------------------------------------------------------------------------
 RX_RE = re.compile(r">>\s*([0-9a-f]{2}(?::[0-9a-f]{2})*)", re.IGNORECASE)
+TX_RE = re.compile(r"<<\s*([0-9a-f]{2}(?::[0-9a-f]{2})*)", re.IGNORECASE)
 KEY_RE = re.compile(r"key pressed:\s*'?([a-zA-Z ]+)'?", re.IGNORECASE)
 
 
 def parse_rx(line):
     """Parse a received cec-client traffic line into a message, or None."""
-    m = RX_RE.search(line)
+    return _parse_traffic(RX_RE, line)
+
+
+def parse_tx(line):
+    """Parse a line for a message the Pi sent (ours or cec-client's own replies), or None."""
+    return _parse_traffic(TX_RE, line)
+
+
+def _parse_traffic(regex, line):
+    m = regex.search(line)
     if not m:
         return None
     data = m.group(1).lower().split(":")
@@ -343,6 +358,10 @@ class Controller:
         self.guard_until = 0
         self.guard_count = 0
         self.last_auto_switch = None
+        self.tv_boot_started = None     # we turned the TV on and are waiting for it to report on
+        self.next_boot_poll = 0
+        self.tv_settle_until = 0        # the TV reported on, re-claims run until then
+        self.pullback_pending = False
         self.pc_name = cfg.pc_name       # from the config, or looked up from the PC
         self.name_lookup_inflight = False
         self.name_lookup_tries = 0
@@ -391,6 +410,18 @@ class Controller:
 
     def assert_pc_input(self, why):
         self.cec(f"tx {self.la:x}F:82:{self.pc_primary}", why)
+
+    def pull_back(self, why):
+        """Claim the PC's input after guard_delay. Repeated calls before it fires add nothing."""
+        if self.pullback_pending:
+            return
+        self.pullback_pending = True
+
+        def fire():
+            self.pullback_pending = False
+            if self.tv_input in self.pc_set:
+                self.assert_pc_input(why)
+        self.after(self.cfg.guard_delay, "pull back", fire)
 
     def request_soundbar_audio(self):
         if not (self.cfg.select_soundbar_audio and self.cfg.soundbar_pc_audio_address):
@@ -445,6 +476,8 @@ class Controller:
             self.on_suspend_done(event[1], event[2])
         elif kind == "pc_name":
             self.on_pc_name(event[1])
+        elif kind == "cec_out":
+            self.on_cec_out(event[1])
 
     def lookup_pc_name(self):
         """Ask the PC for its name once it is reachable, unless the config sets one."""
@@ -477,6 +510,18 @@ class Controller:
             self.after(0.3, "answer active source", lambda: self.assert_pc_input(
                 "answering Request Active Source for the PC"))
 
+    def on_cec_out(self, msg):
+        """A message the Pi sent. cec-client answers some requests by itself, for
+        example with Active Source for the Pi's own input, which pulls the TV there."""
+        p = msg.params
+        if not (msg.opcode == "82" and msg.broadcast and len(p) >= 2
+                and f"{p[0]}:{p[1]}" == self.cfg.pi_address):
+            return
+        if self.tv_boot_started is None and self.tv_input in self.pc_set and self.pc_online:
+            log("RECOVER", f"cec-client announced the Pi's own input ({self.input_name(self.cfg.pi_address)}) "
+                           "while the PC is awake. Pulling the TV back to the PC")
+            self.pull_back("undoing a switch to the Pi's own input")
+
     def on_announcement(self, initiator, opcode, addr):
         sender = device_name(initiator)
         detail = f" ({ANNOUNCE_OPCODES[opcode]} from {sender}, {addr})"
@@ -484,6 +529,21 @@ class Controller:
             log("INPUT", f"Ignored {self.input_name(addr)}{detail}: sender is in ignore_announcements_from")
             return
         t = self.now()
+        if self.tv_input in self.pc_set and addr not in self.pc_set:
+            if self.tv_boot_started is not None:
+                log("RECOVER", f"{self.input_name(addr)} announced while the TV is starting{detail}. "
+                               "Ignored: the PC's input is claimed once the TV reports that it is on")
+                return
+            if t < self.tv_settle_until:
+                log("RECOVER", f"{self.input_name(addr)} announced while the TV finishes starting{detail}. "
+                               "Pulling the TV back to the PC")
+                self.pull_back("undoing a switch made while the TV was starting")
+                return
+            if addr == self.cfg.pi_address and self.pc_online:
+                log("RECOVER", f"{self.input_name(addr)} announced while the PC is awake{detail}. "
+                               "The Pi's own input is never kept while the PC is on: pulling the TV back")
+                self.pull_back("undoing a switch to the Pi's own input")
+                return
         if (self.tv_input in self.pc_set and addr in self.suspects and t < self.guard_until
                 and self.guard_count < self.cfg.max_guard_recoveries):
             self.guard_count += 1
@@ -498,6 +558,8 @@ class Controller:
     def on_standby(self, initiator, destination):
         if initiator == 0:
             log("TV", "Standby broadcast from the TV")
+            self.tv_boot_started = None
+            self.tv_settle_until = 0
             self.tv_power = "standby"
             self.set_input("standby", "standby")
             return
@@ -514,6 +576,14 @@ class Controller:
 
     def on_power_status(self, code):
         status = POWER_STATUS.get(code, f"unknown ({code})")
+        if self.tv_boot_started is not None:
+            if code == "00":
+                log("TV", "TV reports that it is on")
+                self.tv_power = "on"
+                self.tv_ready()
+            else:
+                log("TV", f"TV power status: {status}, still waiting for it to start", level="DEBUG")
+            return
         changed = (self.tv_power != ("standby" if code in ("01", "03") else "on"))
         log("TV", f"TV power status: {status}", level="INFO" if changed else "DEBUG")
         if code in ("01", "03"):
@@ -610,7 +680,36 @@ class Controller:
             return
         self.last_auto_switch = t
         self.cec("on 0", "PC woke by itself: turning the TV on")
-        self.set_input(self.pc_primary, "self", " (PC woke by itself)")
+        if self.tv_power == "on" and self.tv_input != "standby":
+            self.set_input(self.pc_primary, "self", " (PC woke by itself)")
+            return
+        # The TV is off or its state is unknown. A starting TV may switch to the Pi
+        # (Image View On came from the Pi's input) or route to another device, so
+        # the PC's input is only claimed once the TV reports that it is on.
+        self.tv_boot_started = t
+        self.next_boot_poll = t
+        self.tv_settle_until = 0
+        log("TV", f"Waiting up to {self.cfg.tv_boot_timeout}s for the TV to report that it is on "
+                  "before switching it to the PC")
+        self.set_input(self.pc_primary, "boot", " (PC woke by itself, TV starting)")
+
+    def tv_ready(self):
+        """The TV finished starting (or never answered). Claim the PC's input, then again a few times."""
+        self.tv_boot_started = None
+        if self.tv_input not in self.pc_set:
+            return
+        n, gap = self.cfg.tv_boot_reclaims, self.cfg.tv_boot_reclaim_interval
+        t = self.now()
+        self.tv_settle_until = t + n * gap
+        self.guard_until = max(self.guard_until, self.tv_settle_until + self.cfg.guard_window)
+        self.guard_count = 0
+        self.assert_pc_input("the TV is on: switching it to the PC")
+
+        def reclaim(i):
+            if self.tv_input in self.pc_set and self.tv_boot_started is None:
+                self.assert_pc_input(f"the TV may still be starting: claiming the PC's input again ({i}/{n})")
+        for i in range(1, n + 1):
+            self.after(i * gap, "re-claim", lambda i=i: reclaim(i))
 
     def on_suspend_done(self, returncode, detail):
         self.suspend_inflight = False
@@ -631,6 +730,15 @@ class Controller:
         self.timers = [x for x in self.timers if x[0] > t]
         for _, _, fn in sorted(due, key=lambda x: x[0]):
             fn()
+
+        if self.tv_boot_started is not None:
+            if t - self.tv_boot_started >= self.cfg.tv_boot_timeout:
+                log("TV", f"The TV did not report that it is on within {self.cfg.tv_boot_timeout}s. "
+                          "Switching it to the PC anyway", level="WARN")
+                self.tv_ready()
+            elif t >= self.next_boot_poll:
+                self.next_boot_poll = t + TV_BOOT_POLL
+                self.actions.cec_send("pow 0")
 
         if self.cfg.power_poll_interval and t >= self.next_power_poll:
             self.next_power_poll = t + self.cfg.power_poll_interval
@@ -714,6 +822,7 @@ class Controller:
             "wol_attempts": self.wol_attempts,
             "suspend_attempts": self.suspend_attempts,
             "guard_active": t < self.guard_until and self.tv_input in self.pc_set,
+            "tv_starting": self.tv_boot_started is not None,
             "pc_sleep_check_seconds_left": (max(0, int(self.cfg.pc_sleep_confirm - (t - self.pc_offline_since)))
                                             if self.pc_offline_since is not None else None),
             "tv_input_address": self.tv_input,
@@ -770,6 +879,10 @@ class CecClient:
             msg = parse_rx(line)
             if msg:
                 self.events.put(("cec", msg))
+            else:
+                out = parse_tx(line)
+                if out:
+                    self.events.put(("cec_out", out))
         self.events.put(("cec_exit", self.proc.wait()))
 
 

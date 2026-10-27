@@ -403,6 +403,33 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(couchlink.own_address("127.0.0.1"), "127.0.0.1")
         self.assertIsNone(couchlink.own_address("no-such-host.invalid"))
 
+    def test_status_page_text_has_enough_contrast(self):
+        """The page's gray text colors stay readable (WCAG AA, 4.5:1) on its tiles and background."""
+        import re
+
+        def luminance(hexcolor):
+            rgb = [int(hexcolor[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+            lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+            return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+        def ratio(a, b):
+            hi, lo = sorted((luminance(a), luminance(b)), reverse=True)
+            return (hi + 0.05) / (lo + 0.05)
+
+        html = couchlink.DASHBOARD_HTML
+        page = re.search(r"--bg: #([0-9a-f]{6})", html).group(1)
+        tile = "0e1320"     # --panel blended over --bg
+        for name in ("muted", "dim"):
+            color = re.search(rf"--{name}: #([0-9a-f]{{6}})", html).group(1)
+            for ground in (page, tile):
+                self.assertGreaterEqual(ratio(color, ground), 4.5, f"--{name} on #{ground}")
+
+    def test_status_page_parts(self):
+        html = couchlink.DASHBOARD_HTML
+        self.assertIn('id="lost" role="status" hidden', html)       # the lost-contact banner
+        self.assertIn('</svg>PC</div>', html)                        # the PC tile
+        self.assertIn("min-height: 44px", html)                      # tabs big enough to tap
+
     def test_status_page_links_to_repo(self):
         self.assertIn('href="https://github.com/blackhat840/CouchLink"', couchlink.DASHBOARD_HTML)
 

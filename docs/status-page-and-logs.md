@@ -17,14 +17,22 @@ It shows:
   for how CouchLink tells them apart. The name comes from `pc_name`, or from the PC's
   own hostname if that is not set.
 - TV power and input, and how long the TV has been on that input.
-- Whether the PC is up, asleep or off, and for how long. If it was already
-  like that when CouchLink started, it says "for at least".
+- Whether the PC is on, asleep, off or restarting, and for how long. If it was
+  already like that when CouchLink started, it says "for at least".
 - Wake-on-LAN and suspend attempts, the input guard, the sleep check and what
-  happens after it, and how long CouchLink has been running.
+  happens after it, and how long CouchLink has been running. While the PC
+  restarts, the sleep check shows "On hold".
 - Recent events and raw CEC traffic, each in its own tab.
 - Links to the raw JSON and to this repository.
 
-The page loads nothing from the internet.
+If the page loses contact with CouchLink, for example because the Pi is off,
+it dims everything and says when it last heard from it. It comes back by
+itself when CouchLink answers again.
+
+The browser tab's title starts with the PC's state, so you can see it from
+another tab. The page loads nothing from the internet, and it works with
+screen readers: the status is read out when it changes, not on every
+refresh.
 
 `http://<pi>:8080/api` returns the same information as JSON. There is no
 login, so keep the page on a trusted network.

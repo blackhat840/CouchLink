@@ -1464,6 +1464,24 @@ footer a { color: var(--muted); }
 '''
 
 
+def own_address(toward):
+    """The Pi's IP address on the route to another host, or None. Nothing is sent."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect((toward, 9))
+            return s.getsockname()[0]
+    except OSError:
+        return None
+
+
+def status_page_urls(port, ip, hostname):
+    """Where to open the status page, best first."""
+    urls = [f"http://{ip}:{port}"] if ip else []
+    if hostname:
+        urls.append(f"http://{hostname}.local:{port}")
+    return urls or [f"http://<pi-address>:{port}"]
+
+
 def start_dashboard(port, controller):
     page = DASHBOARD_HTML.encode()
 
@@ -1494,7 +1512,8 @@ def start_dashboard(port, controller):
         log("STARTUP", f"Status page disabled, port {port} unavailable: {e}", level="WARN")
         return
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    log("STARTUP", f"Status page on http://<pi-ip>:{port}")
+    urls = status_page_urls(port, own_address(controller.cfg.pc_host), socket.gethostname())
+    log("STARTUP", f"Status page on {' or '.join(urls)}")
 
 
 # --------------------------------------------------------------------------
@@ -1695,7 +1714,7 @@ def main(argv=None):
     ctl = Controller(cfg, actions)
     log("STARTUP", f"CouchLink {VERSION}{' DRY RUN' if args.dry_run else ''} starting. "
                    f"PC input: {', '.join(ctl.input_name(a) for a in cfg.pc_addresses)}, "
-                   f"Pi: {ctl.input_name(cfg.pi_address)}, host: {cfg.pc_host}")
+                   f"Pi: {ctl.input_name(cfg.pi_address)}, PC address: {cfg.pc_host}")
     threading.Thread(target=pinger, args=(cfg, events), daemon=True).start()
     if cfg.dashboard_port:
         start_dashboard(cfg.dashboard_port, ctl)

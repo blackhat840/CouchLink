@@ -393,6 +393,16 @@ class FlowTests(unittest.TestCase):
     def test_version_matches_docstring(self):
         self.assertIn(f"CouchLink {couchlink.VERSION}\n", couchlink.__doc__)
 
+    def test_status_page_urls(self):
+        self.assertEqual(couchlink.status_page_urls(8080, "192.168.1.20", "couchlink"),
+                         ["http://192.168.1.20:8080", "http://couchlink.local:8080"])
+        self.assertEqual(couchlink.status_page_urls(8080, None, "couchlink"), ["http://couchlink.local:8080"])
+        self.assertEqual(couchlink.status_page_urls(8080, None, ""), ["http://<pi-address>:8080"])
+
+    def test_own_address(self):
+        self.assertEqual(couchlink.own_address("127.0.0.1"), "127.0.0.1")
+        self.assertIsNone(couchlink.own_address("no-such-host.invalid"))
+
     def test_status_page_links_to_repo(self):
         self.assertIn('href="https://github.com/blackhat840/CouchLink"', couchlink.DASHBOARD_HTML)
 

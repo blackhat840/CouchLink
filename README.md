@@ -779,5 +779,3 @@ owners. Bazzite is a project of Universal Blue.
 
 Couchlink is free software, released under the GNU General Public License,
 version 3 or later. See [LICENSE](LICENSE) for the full text.
-
-Copyright (C) 2026 blackhat840

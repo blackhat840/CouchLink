@@ -2,7 +2,7 @@
 
 Make a SteamOS or Bazzite gaming PC behave like a console on your TV.
 
-A Raspberry Pi on the TV's HDMI-CEC bus keeps the PC and the TV in step. It
+A Raspberry Pi on the TV's HDMI-CEC bus keeps the PC and the TV in sync. It
 works with SteamOS, Bazzite and any other Linux PC that uses systemd.
 
 ## Contents

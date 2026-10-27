@@ -7,10 +7,17 @@ fake actions stand in for the hardware. Run from the folder that holds both file
     python3 test_couchlink.py
 """
 import importlib.util
+import io
+import json
 import os
+import shutil
+import subprocess
 import sys
+import tarfile
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("couchlink", os.path.join(HERE, "couchlink.py"))
@@ -64,6 +71,11 @@ class FakeActions:
 
 def msg(text):
     return ("cec", couchlink.parse_rx(f"TRAFFIC: [ 1]\t>> {text}"))
+
+
+def out(text):
+    """A message the Pi sent, as cec-client logs it."""
+    return ("cec_out", couchlink.parse_tx(f"TRAFFIC: [ 1]\t<< {text}"))
 
 
 class Sim:
@@ -286,6 +298,8 @@ class FlowTests(unittest.TestCase):
         s.pc(True)
         s.run(2)
         self.assertIn("on 0", s.act.cec)
+        self.assertNotIn("tx 1F:82:30:00", s.act.cec)   # waits for the TV to start
+        s.ev(msg("01:90:00"))                           # TV says: on
         self.assertIn("tx 1F:82:30:00", s.act.cec)
         self.assertEqual(s.ctl.tv_input, "30:00")
         s.run(30)
@@ -370,9 +384,14 @@ class FlowTests(unittest.TestCase):
 
     def test_own_transmissions_and_junk_ignored(self):
         self.assertIsNone(couchlink.parse_rx("TRAFFIC: [ 1]\t<< 1f:82:30:00"))
+        self.assertIsNone(couchlink.parse_tx("TRAFFIC: [ 1]\t>> 0f:86:30:00"))
+        self.assertEqual(couchlink.parse_tx("TRAFFIC: [ 1]\t<< 1f:82:40:00").params, ["40", "00"])
         self.assertIsNone(couchlink.parse_rx("TRAFFIC: [ 1]\t>> 01"))
         self.assertIsNone(couchlink.parse_rx("NOTICE: connected"))
         self.assertEqual(couchlink.parse_key("DEBUG: key pressed: fast forward (49)"), "fast forward")
+
+    def test_status_page_links_to_repo(self):
+        self.assertIn('href="https://github.com/blackhat840/CouchLink"', couchlink.DASHBOARD_HTML)
 
     def test_input_names(self):
         s = Sim()
@@ -501,6 +520,277 @@ class PcSleepTests(unittest.TestCase):
         s.pc(False)
         s.ev(msg("0f:36"))                              # TV off
         self.assertEqual(s.ctl.tv_input, "standby")
+
+
+class TvBootTests(unittest.TestCase):
+    """The PC wakes by itself while the TV is off (issue 1)."""
+
+    def off_then_controller_wake(self, **overrides):
+        s = Sim(**dict(REAL, **overrides))
+        s.pc(False)
+        s.ev(msg("0f:36"))                              # TV off
+        s.run(30)
+        s.pc(True)                                      # controller wakes the PC
+        return s
+
+    def test_trace_replay_controller_wake_with_tv_off(self):
+        """The sequence from issue 1. No wake.log was attached, so the TV's boot
+        traffic below is assumed from the issue: a standby report while it starts,
+        the route to the streamer on HDMI 1, then a switch to the Pi's own input
+        caused by Image View On, with cec-client answering for the Pi."""
+        s = self.off_then_controller_wake()
+        self.assertIn("on 0", s.act.cec)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(2)
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)   # not claimed while the TV starts
+        self.assertGreaterEqual(s.act.cec.count("pow 0"), 1)
+        s.ev(msg("01:90:01"))                           # still in standby while starting
+        s.ev(msg("0f:80:10:00:11:00"))                  # TV boots on HDMI 1 -> streamer
+        s.run(2)
+        s.ev(msg("01:90:02"))                           # turning on
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)
+        s.ev(msg("01:90:00"))                           # TV is on
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 1)
+        s.ev(msg("0f:86:40:00"))                        # TV jumps to the Pi's input (HDMI 4)
+        s.ev(out("1f:82:40:00"))                        # cec-client answers for the Pi
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(10)
+        # first claim + 3 re-claims + one pull-back for the switch to the Pi
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 5)
+        s.ev(msg("0f:80:40:00:10:00"))                  # TV back on HDMI 1
+        s.ev(msg("5f:81:12:00"))                        # soundbar wakes on the PC's input
+        s.run(60)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.suspends, 0)
+        self.assertEqual(s.act.wols, 0)
+        claims = s.act.cec.count("tx 1F:82:12:00")
+        s.ev(msg("0f:80:10:00:40:00"))                  # late switch to the Pi, guard long over
+        s.run(2)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), claims + 1)
+
+    def test_tv_never_reports_on_claims_after_timeout(self):
+        s = self.off_then_controller_wake(tv_boot_timeout=10)
+        s.run(9)
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)
+        self.assertGreaterEqual(s.act.cec.count("pow 0"), 4)   # kept asking
+        s.run(2)
+        self.assertIn("tx 1F:82:12:00", s.act.cec)
+        s.run(10)
+        s.ev(msg("01:90:01"))                           # TV really is off
+        s.run(6)
+        self.assertEqual(s.ctl.tv_input, "standby")
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_tv_turned_off_while_starting_cancels(self):
+        s = self.off_then_controller_wake()
+        s.run(2)
+        s.ev(msg("0f:36"))                              # user turns the TV off again
+        s.run(30)
+        self.assertNotIn("tx 1F:82:12:00", s.act.cec)
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_switch_while_settling_pulled_back(self):
+        s = self.off_then_controller_wake(tv_boot_reclaims=2, tv_boot_reclaim_interval=3)
+        s.ev(msg("01:90:00"))
+        s.run(1)
+        s.ev(msg("0f:80:10:00:11:00"))                  # streamer route right after power on
+        s.ev(msg("4f:82:11:00"))                        # and the streamer claims the TV
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(10)
+        # first claim + 2 re-claims + one pull-back
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 4)
+        s.ev(msg("0f:80:10:00:11:00"))                  # later: a real switch to the streamer
+        s.run(30)
+        self.assertEqual(s.ctl.tv_input, "11:00")
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_tv_already_on_switches_without_waiting(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))                        # TV on, showing the streamer
+        s.ev(msg("01:90:00"))
+        s.run(30)
+        s.pc(True)
+        s.run(2)
+        self.assertIn("tx 1F:82:12:00", s.act.cec)
+        self.assertFalse(s.ctl.snapshot()["tv_starting"])
+
+    def test_pi_input_never_kept_while_pc_awake(self):
+        s = Sim(**REAL)
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(60)                                       # guard window long over
+        s.ev(msg("0f:80:10:00:40:00"))
+        s.ev(out("1f:82:40:00"))
+        s.ev(msg("0f:86:40:00"))
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.run(3)
+        self.assertEqual(s.act.cec.count("tx 1F:82:12:00"), 2)  # claim + one pull-back
+        s.run(30)
+        self.assertEqual(s.act.suspends, 0)
+
+    def test_pi_input_accepted_while_pc_asleep(self):
+        s = Sim(**REAL)
+        s.pc(False)
+        s.ev(msg("5f:81:11:00"))
+        s.run(30)
+        s.ev(msg("0f:80:10:00:40:00"))
+        s.ev(out("1f:82:40:00"))
+        self.assertEqual(s.ctl.tv_input, "40:00")
+        self.assertFalse(any(c.startswith("tx 1F:82") for c in s.act.cec))
+
+    def test_boot_settings_validated(self):
+        _, problems = couchlink.validate(dict(BASE, tv_boot_timeout=-1, tv_boot_reclaims=1.5))
+        text = " ".join(problems)
+        self.assertIn("tv_boot_timeout", text)
+        self.assertIn("tv_boot_reclaims", text)
+
+
+def release_archive(tag, files):
+    """A .tar.gz shaped like GitHub's source archives: one top folder."""
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+        for name, text in files.items():
+            data = text.encode()
+            info = tarfile.TarInfo(name if name.startswith("..") else f"CouchLink-{tag.lstrip('v')}/{name}")
+            info.size, info.mode = len(data), 0o755
+            tf.addfile(info, io.BytesIO(data))
+    return buf.getvalue()
+
+
+STUB_INSTALLER = '#!/bin/bash\necho "ran $COUCHLINK_RELEASE_TAG $*" > "$ROOT/stub-ran"\n'
+
+
+@unittest.skipUnless(shutil.which("bash"), "bash is needed for the installer tests")
+class InstallerTests(unittest.TestCase):
+    """install.sh against a local stand-in for GitHub. The downloaded installers
+    are stubs that record how they were run."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.src = os.path.join(self.tmp, "src")           # no test file here, so no recursion
+        os.makedirs(self.src)
+        for name in ("install.sh", "couchlink.py", "couchlink.example.toml"):
+            shutil.copy(os.path.join(HERE, name), self.src)
+        self.root = os.path.join(self.tmp, "root")
+        os.makedirs(os.path.join(self.root, "usr/local/bin"))
+        os.makedirs(os.path.join(self.root, "etc/couchlink"))
+        with open(os.path.join(self.root, "usr/local/bin/couchlink"), "w") as f:
+            f.write('VERSION = "2.1"\n')
+        with open(os.path.join(self.root, "etc/couchlink/config.toml"), "w") as f:
+            f.write('pc_host = "192.168.1.50"\npc_mac = "aa:bb:cc:dd:ee:01"\n'
+                    'pc_addresses = ["12:00"]\npi_address = "40:00"\n')
+        self.releases = [
+            {"tag_name": "v2.3", "name": "Couchlink 2.3", "published_at": "2026-11-01T00:00:00Z"},
+            {"tag_name": "v2.2", "name": "Couchlink 2.2", "published_at": "2026-10-27T00:00:00Z"},
+            {"tag_name": "v2.4", "name": "Unfinished", "draft": True},
+            {"tag_name": "v2.0", "name": "Couchlink 2.0", "published_at": "2026-09-01T00:00:00Z"},
+        ]
+        self.latest = "v2.3"
+        self.archives = {r["tag_name"]: release_archive(r["tag_name"], {"install.sh": STUB_INSTALLER})
+                         for r in self.releases}
+        test = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path.startswith("/api/releases/latest"):
+                    body = json.dumps({"tag_name": test.latest}).encode()
+                elif self.path.startswith("/api/releases"):
+                    body = json.dumps(test.releases).encode()
+                elif self.path.startswith("/archive/") and self.path[9:-7] in test.archives:
+                    body = test.archives[self.path[9:-7]]
+                else:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def install(self, *args, api=None):
+        env = {k: v for k, v in os.environ.items() if "proxy" not in k.lower()}
+        env.update(ROOT=self.root, INSTALL_TEST="1", COUCHLINK_API=api or f"{self.base}/api",
+                   COUCHLINK_ARCHIVE=f"{self.base}/archive/{{tag}}.tar.gz")
+        r = subprocess.run(["bash", os.path.join(self.src, "install.sh"), *args], env=env,
+                           stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                           timeout=120, start_new_session=True)
+        return r.returncode, r.stdout + r.stderr
+
+    def stub_ran(self):
+        path = os.path.join(self.root, "stub-ran")
+        return open(path).read().strip() if os.path.exists(path) else None
+
+    def test_update_installs_latest_release(self):
+        code, out = self.install("--update")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.3 --update")
+
+    def test_update_passes_with_hid_on(self):
+        code, out = self.install("--update", "--with-hid")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.3 --update --with-hid")
+
+    def test_already_on_latest_does_nothing(self):
+        self.latest = "v2.1"
+        code, out = self.install("--update")
+        self.assertEqual(code, 0, out)
+        self.assertIn("already the latest release", out)
+        self.assertIsNone(self.stub_ran())
+
+    def test_chosen_release(self):
+        code, out = self.install("--update", "--release", "v2.2")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.2 --update")
+
+    def test_older_release_needs_confirmation(self):
+        code, out = self.install("--release=v2.0")
+        self.assertNotEqual(code, 0)
+        self.assertIn("older than the installed 2.1", out)
+        self.assertIsNone(self.stub_ran())
+
+    def test_picking_needs_a_terminal(self):
+        code, out = self.install("--update", "--release")
+        self.assertNotEqual(code, 0)
+        self.assertIn("No terminal", out)
+
+    def test_list_releases_skips_drafts(self):
+        code, out = self.install("--list-releases")
+        self.assertEqual(code, 0, out)
+        self.assertIn("v2.3", out)
+        self.assertIn("v2.0", out)
+        self.assertNotIn("v2.4", out)
+
+    def test_unsafe_archive_rejected(self):
+        self.archives["v2.3"] = release_archive("v2.3", {"install.sh": STUB_INSTALLER,
+                                                         "../../evil.sh": "boom"})
+        code, out = self.install("--update")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Unsafe entry", out)
+        self.assertIsNone(self.stub_ran())
+
+    def test_github_unreachable(self):
+        code, out = self.install("--update", api="http://127.0.0.1:9/api")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Could not reach GitHub", out)
+
+    def test_local_update_installs_files_next_to_the_script(self):
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        self.assertIsNone(self.stub_ran())
+        with open(os.path.join(self.root, "usr/local/bin/couchlink")) as f:
+            self.assertIn(f'VERSION = "{couchlink.VERSION}"', f.read())
 
 
 class PcNameTests(unittest.TestCase):

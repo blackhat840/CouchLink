@@ -2,17 +2,8 @@
 
 Make a SteamOS or Bazzite gaming PC behave like a console on your TV.
 
-A Raspberry Pi on the TV's HDMI-CEC bus keeps the PC and the TV in step:
-
-- Switch the TV to the PC and the PC wakes up.
-- Switch to anything else, or turn the TV off, and the PC goes to sleep.
-- Press the button on your controller to wake the PC, and the TV turns on and
-  switches to it, soundbar included.
-- Choose Sleep from the Steam menu, and the TV goes back to your streaming box
-  (or turns off, if you prefer).
-
-It is written for couch gaming PCs running SteamOS, Bazzite and similar
-distros, and works with any Linux PC that uses systemd.
+A Raspberry Pi on the TV's HDMI-CEC bus keeps the PC and the TV in step. It
+works with SteamOS, Bazzite and any other Linux PC that uses systemd.
 
 ## Contents
 
@@ -42,17 +33,9 @@ distros, and works with any Linux PC that uses systemd.
 
 ## Why this exists
 
-TVs, soundbars and streaming boxes talk to each other over HDMI-CEC. That is
-how one remote can turn everything on, or how a streaming stick can switch the
-TV to itself.
-
-Most PC graphics cards do not support CEC, so a PC plugged into the same TV is
-left out. It never finds out that you switched inputs or turned the TV off.
-
-A Raspberry Pi plugged into a spare HDMI port can join the CEC bus and act on
-the PC's behalf. It hears every input change, wakes the PC over the network,
-puts it to sleep over SSH, and tells the TV and soundbar to switch to the PC
-when the PC turns on by itself.
+TVs, soundbars and streaming boxes talk to each other over HDMI-CEC. Most PC
+graphics cards do not support CEC, so a PC on the same TV never finds out that
+you switched inputs or turned the TV off.
 
 ## What it does
 
@@ -62,7 +45,9 @@ when the PC turns on by itself.
   off. It waits a few seconds first, so flipping past the PC's input on the
   way to another one does not count.
 - **Switches the TV to the PC** when the PC wakes up on its own, for example
-  from a controller or the power button. Turns the TV on first if needed.
+  from a controller or the power button. If the TV is off, Couchlink turns it
+  on, waits for it to report that it is on, then claims the PC's input a few
+  more times while the TV finishes starting.
 - **Handles Sleep from the Steam menu.** When the PC goes to sleep by itself,
   Couchlink can switch the TV to another input, turn the TV off, or leave it
   alone. It never wakes the PC back up.
@@ -84,22 +69,18 @@ the PC.
 | Bazzite | Instructions included, not yet tested by the author | Fedora Atomic base; `/etc` is writable, so no read-only toggle is needed |
 | ChimeraOS, Nobara, CachyOS and others | Should work | Anything with systemd, sudo and NetworkManager |
 
-If you run it on one of the untested systems, please open an issue or pull
-request saying how it went.
+If you run it on an untested system, please open an issue saying how it went.
 
 ## Project status
 
 This is a work in progress.
 
-- The CEC behaviour has been checked on real hardware (see
-  [Tested hardware](#tested-hardware)): bus scans, traffic traces, and the
+- The CEC behavior has been checked on the hardware in
+  [Tested hardware](#tested-hardware): bus scans, traffic traces, and the
   commands that switch the TV and soundbar.
 - Couchlink's logic is covered by offline tests that replay simulated traffic,
   including messages captured from that hardware.
 - Long-term live testing is ongoing.
-
-Expect to spend some time with the dry run on your own TV. CEC behaviour
-varies a lot between brands.
 
 ## How it works
 
@@ -139,15 +120,7 @@ Couchlink learns which input is active by listening for these CEC messages:
 | `36` | Standby | The TV turning off (or another device asking it to) |
 | `90` | Report Power Status | The TV answering "are you on?" |
 
-Different TVs use different messages. The Vizio TV this was tested on only
-uses Routing Change (`80`) for manual input changes, for example. Couchlink
-watches all of them.
-
-Inside the program, one controller thread owns all of the state. A reader
-thread passes CEC messages to it, a pinger reports whether the PC is
-reachable, and SSH runs on its own thread so a slow PC never holds up CEC
-handling. Settings live in `/etc/couchlink/config.toml`, so updating the program
-never touches them.
+Different TVs use different messages, so Couchlink watches all of them.
 
 ## What you need
 
@@ -160,9 +133,7 @@ never touches them.
 | A gaming PC | SteamOS, Bazzite or a similar distro. See [Supported systems](#supported-systems). |
 | A network | The Pi and the PC on the same LAN. |
 
-**Waking the PC.** Wake-on-LAN over a wired Ethernet connection is the most
-reliable option and works from sleep and from power-off. Wake-on-LAN over
-Wi-Fi only works on some Wi-Fi cards and only from sleep. See
+Wired Ethernet is the most reliable way to wake the PC. See
 [Preparing the PC](#preparing-the-pc).
 
 ## Quick start
@@ -397,13 +368,10 @@ sudo nmcli connection modify "<wifi connection>" 802-11-wireless.wake-on-wlan ma
 
 **Controller.** Many controllers, and their USB dongles, can wake a sleeping
 PC by themselves. Put the PC to sleep and press the controller's home button.
-If the PC wakes, Couchlink will notice within a few seconds and switch the TV
-and soundbar to it. You do not need network waking for this, although you
-still need it for the PC to wake when you pick its input on the TV.
-
-Bazzite users report that Xbox controllers wake the PC from sleep out of the
-box. Some controllers need an extra udev rule to do it, and Bazzite ships those
-for the ones it knows about, such as the 2026 Steam Controller.
+If the PC wakes, Couchlink notices within a few seconds and switches the TV
+and soundbar to it. You still need network waking for the PC to wake when you
+pick its input on the TV. Some controllers need a udev rule before they can
+wake the PC. Bazzite ships these rules for the controllers it knows about.
 
 ### 5. Give the Pi a key the PC trusts
 
@@ -484,24 +452,41 @@ sudo systemctl disable --now couchlink.service
 
 ## Updating
 
-Pull or copy the new files into the same folder, then run:
+From the folder you installed from, run:
 
 ```bash
 cd Couchlink
-git pull
 sudo bash install.sh --update
 ```
 
-`--update` does the following, in order:
+This downloads the latest release from GitHub and installs it. Other options:
 
-1. Skips the package step.
-2. Runs the offline tests.
-3. Checks your existing config against the new version.
-4. Installs the new script.
-5. Restarts the service if it is running.
+| Command | What it does |
+|---|---|
+| `sudo bash install.sh --update --release v2.2` | Installs that release |
+| `sudo bash install.sh --update --release` | Lists the releases and asks which one to install |
+| `bash install.sh --list-releases` | Lists the releases |
+| `sudo bash install.sh --update --local` | Installs the files next to `install.sh` instead, for example after `git pull` |
+
+An update does the following, in order:
+
+1. Downloads the release into a temporary folder and runs its installer.
+2. Skips the package step.
+3. Runs the offline tests.
+4. Checks your existing config against the new version.
+5. Installs the new script.
+6. Restarts the service if it is running.
 
 If the tests or the config check fail, nothing is changed and the installed
-version keeps running.
+version keeps running. Installing a release older than the installed version
+asks you to confirm. If the installed version is already the latest release,
+nothing happens.
+
+Releases are downloaded from GitHub over HTTPS. They are not signed.
+
+`install.sh` from version 2.2 and earlier does not download releases. Its
+`--update` installs the files next to it. Run `git pull` once to get the new
+installer.
 
 Your config is never overwritten. The newest example is saved next to it, so
 you can see what a new version added:
@@ -539,7 +524,7 @@ seconds.
 | `pi_logical_address` | `1` | The Pi's CEC logical address. `cec-client` uses 1 by default. |
 | `ignore_announcements_from` | `[]` | Logical addresses whose input announcements are ignored, such as `[5]` for a soundbar. |
 
-### Behaviour
+### Behavior
 
 | Setting | Default | Meaning |
 |---|---|---|
@@ -568,6 +553,9 @@ seconds.
 | `guard_delay` | `1.5` | Pause before undoing an automatic switch. |
 | `max_guard_recoveries` | `2` | Automatic switches undone per wake. |
 | `auto_switch_cooldown` | `30` | Minimum time between switching the TV to the PC on its own. |
+| `tv_boot_timeout` | `20` | When the PC wakes with the TV off: how long to wait for the TV to report that it is on before switching it to the PC anyway. |
+| `tv_boot_reclaims` | `3` | After the TV reports that it is on, how many more times to claim the PC's input. |
+| `tv_boot_reclaim_interval` | `2` | Time between those claims. Input changes in this period are undone. |
 | `pc_sleep_confirm` | `12` | How long the PC must stay offline before it counts as asleep. Stops Wi-Fi hiccups from triggering `on_pc_sleep`. |
 | `power_poll_interval` | `60` | How often to ask the TV whether it is on. `0` asks only at startup. |
 | `power_query_delays` | `[2, 8]` | When to ask the TV after another device sends standby. |
@@ -608,7 +596,11 @@ sudo journalctl -u couchlink.service | grep -E "\[(INPUT|SUSPEND|WOL)\]"
 ### Status page
 
 Open `http://<pi>:8080` on a phone or computer on the same network. It updates
-every 2 seconds and shows:
+every 2 seconds.
+
+![The Couchlink status page with the PC online on HDMI 1.2](docs/dashboard.png)
+
+It shows:
 
 - The PC's name and state (online, waking up, going to sleep, asleep), and the
   path from the TV to the PC. The name comes from `pc_name`, or from the PC's
@@ -616,9 +608,9 @@ every 2 seconds and shows:
 - TV power and input, whether the PC answers on the network, Wake-on-LAN and
   suspend attempts, the input guard, the sleep check and uptime.
 - Recent events and raw CEC traffic, each in its own tab.
+- Links to the raw JSON and to this repository.
 
-The page is a single file served by Couchlink itself. It loads nothing from
-the internet, so it works on a network without internet access.
+The page loads nothing from the internet.
 
 `http://<pi>:8080/api` returns the same information as JSON. There is no
 login, so keep the page on a trusted network.
@@ -640,6 +632,7 @@ login, so keep the page on a trusted network.
 | Suspend stops working after a SteamOS update | Check that `/etc/sudoers.d/zzz-cec-suspend` and sshd survived the update. |
 | The PC is suspended while you use it | Check the log for the input that was announced just before. If it came from the soundbar or another device, `ignore_announcements_from` or `guard_addresses` may help. |
 | The TV switches away after the PC wakes | Look for `RECOVER` lines. If they appear but the TV does not come back, your TV may ignore the Pi's Active Source messages. |
+| The TV is slow to switch to the PC after a controller wake | Look for `TV reports that it is on`. If the log shows `did not report that it is on` instead, your TV does not answer power queries while it starts. Lower `tv_boot_timeout`. |
 | Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 644 <file> /etc/couchlink/config.toml`. |
 
 ## Known limitations
@@ -652,6 +645,9 @@ login, so keep the page on a trusted network.
 - **The Pi speaks for the PC.** It announces itself as the active source at
   the PC's address. Some TVs ignore that. If yours does, automatic switching
   to the PC will not work, but waking and suspending will.
+- **The Pi's own input is never kept while the PC is awake.** If the TV
+  switches to the Pi's input while the PC is on screen, Couchlink switches it
+  back. To look at the Pi's own screen, stop `couchlink.service` first.
 - **A PC restart looks like going to sleep.** If the PC is offline for longer
   than `pc_sleep_confirm`, the `on_pc_sleep` action runs. When the PC comes
   back, the TV switches back to it.
@@ -672,6 +668,8 @@ login, so keep the page on a trusted network.
 | `install.sh` | Installer and updater |
 | `test_couchlink.py` | Offline tests. Run with `python3 test_couchlink.py` |
 | `README.md` | This file |
+| `CONTRIBUTING.md` | Rules for changes to this repository |
+| `docs/dashboard.png` | Screenshot of the status page |
 
 What gets installed on the Pi:
 
@@ -684,8 +682,8 @@ What gets installed on the Pi:
 
 ## Tested hardware
 
-The project has run on two setups so far. Their TVs behave quite differently
-on the CEC bus, which is why Couchlink watches several kinds of messages.
+Couchlink has run on two setups. Their TVs behave quite differently on the
+CEC bus.
 
 ### Current setup: Vizio TV and soundbar
 
@@ -710,28 +708,24 @@ What this setup does on the bus:
 
 ### Earlier setup: Samsung TV
 
-The first version was built and tested with a Samsung TV (Samsung calls CEC
-"Anynet+"), a Pi Zero W, and a Linux PC plugged straight into the TV.
+A Samsung TV (Samsung calls CEC "Anynet+"), a Pi Zero W, and a Linux PC
+plugged straight into the TV. The model and input addresses were not recorded.
 
 What that TV did on the bus:
 
 - It announced input changes with Active Source (`82`) and Set Stream Path
-  (`86`). The first version only watched those two, so it would have missed
-  every input change on the Vizio.
+  (`86`).
 - Going from the PC's input to the TV's built-in apps first announced a route
   to the Pi's input, then the apps. Suspending still worked, because every
   input other than the PC's is treated the same.
 - Right after the Pi woke the PC, the TV sometimes switched itself to the Pi's
   input. The bus showed the TV sending a routing command, and the Pi
-  (`cec-client`) answering with Active Source and Image View On. This is where
-  Couchlink's "undo automatic switches" feature comes from.
-
-The exact model and input addresses of that setup were not recorded.
+  (`cec-client`) answering with Active Source and Image View On.
 
 ### Your hardware
 
-If you get it working on other hardware, a short note or pull request with
-your TV and soundbar models and what you saw in the trace would help others.
+If you get it working on other hardware, please open an issue with your TV
+and soundbar models and what you saw in the trace.
 
 ## Credits
 
@@ -750,15 +744,11 @@ Couchlink stands on the work of these projects:
   wakeup to the Pi's `dwc2` driver and the `wakeup_on_write` setting that the
   keyboard script turns on when it is available. Couchlink does not include the
   patch. It only uses the setting if your kernel has it.
-- **Python** and its standard library. `tomli` is used as a fallback on Python
-  versions older than 3.11.
-- **OpenSSH**, **systemd**, **NetworkManager** (`nmcli`), **iw** and
-  **iputils** (`ping`), which Couchlink and this guide rely on.
 
 ## Related projects
 
 - **[steamos-cec-toolkit](https://github.com/Twsts/steamos-cec-toolkit)**
-  adds console-style CEC behaviour by running on the SteamOS PC itself, using a
+  adds console-style CEC behavior by running on the SteamOS PC itself, using a
   CEC-capable display adapter. Couchlink takes the opposite approach: nothing
   is installed on the PC and no special adapter is needed, at the cost of a
   Raspberry Pi.

@@ -48,8 +48,28 @@ use the CEC adapter at a time.
 
 ## The config file
 
-The installer creates `/etc/couchlink/config.toml`. It belongs to root, so edit
-it with:
+The installer creates `/etc/couchlink/config.toml`.
+
+### The PC's settings
+
+The settings that don't need CEC addresses can be filled in by answering a
+few questions. The installer offers this at the end of a first install. To run
+it again at any time:
+
+```bash
+sudo couchlink --setup
+```
+
+It asks for the PC's IP address, finds the PC's MAC address for you, asks for
+the SSH user and what to do when the PC goes to sleep by itself, and offers to
+set up the SSH key (step 5 of [Preparing the PC](preparing-the-pc.md)). It
+keeps the comments in the file and saves the previous version as
+`config.toml.bak`.
+
+### Editing the file
+
+The CEC addresses, and any other setting, go in the file itself. It belongs
+to root, so edit it with:
 
 ```bash
 sudo nano /etc/couchlink/config.toml

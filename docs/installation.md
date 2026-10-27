@@ -47,7 +47,9 @@ Wired Ethernet is the most reliable way to wake the PC. See
    `cec-utils`, runs the offline tests, installs the program as
    `/usr/local/bin/couchlink`, creates `/etc/couchlink/config.toml`, and
    installs `couchlink.service` without enabling it. You do not need git or a
-   GitHub account. At the end it prints the next steps.
+   GitHub account. At the end it offers to fill in the PC's settings for you
+   (see [Configuration](configuration.md#the-pcs-settings)) and prints the next
+   steps.
 
    If you prefer git, `git clone https://github.com/blackhat840/Couchlink.git`,
    then `cd Couchlink` and `sudo bash install.sh` installs the files from the

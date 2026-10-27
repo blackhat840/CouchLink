@@ -466,22 +466,35 @@ say "Checking the config"
 if python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
     echo "Config OK"
 else
-    grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
-    echo "(Expected on a fresh install: fill in the placeholders, see below.)"
+    if have_tty && [ "$TEST_MODE" != 1 ]; then
+        say "Basic settings"
+        echo "Couchlink can ask for the PC's address and a few other settings now."
+        echo "The CEC addresses come later, with the TV on."
+        read -r -p "Fill in the basic settings now? [Y/n] " a </dev/tty
+        if [ "$a" != n ] && [ "$a" != N ]; then
+            python3 "$BIN" --config "$CONF" --setup </dev/tty || warn "Setup did not finish. Run it again with: sudo couchlink --setup"
+        fi
+    else
+        grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
+        echo "(Expected on a fresh install: fill in the placeholders, see below.)"
+    fi
 fi
 
 # ---------------------------------------------------------------- next steps
 say "Done. Next steps"
 DOCS="https://github.com/blackhat840/CouchLink/blob/main/docs"
 cat <<STEPS
-1. Find your CEC addresses. Guide: $DOCS/configuration.md
+1. Fill in the PC's settings, if you skipped it above:
+     sudo couchlink --setup
+2. Find your CEC addresses and add them to the config, then check it.
+   Guide: $DOCS/configuration.md
      sudo systemctl stop couchlink.service 2>/dev/null; echo "scan" | cec-client -s -d 1
-2. Fill in the config, then check it:
      sudo nano /etc/couchlink/config.toml
      sudo couchlink --check-config
 3. Set up the PC so the Pi can wake it and put it to sleep.
    Guide: $DOCS/preparing-the-pc.md
-4. Give root on the Pi an SSH key the PC trusts:
+4. Give root on the Pi an SSH key the PC trusts. sudo couchlink --setup
+   offers to do this. By hand:
      sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519
      sudo ssh-copy-id deck@<pc-ip>
      sudo ssh deck@<pc-ip> "echo ok"

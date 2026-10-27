@@ -49,11 +49,13 @@ GitHub account needed. New to the Pi? Follow the
 
 Then:
 
-1. Find your CEC addresses and fill in `/etc/couchlink/config.toml`. See
+1. Answer the installer's questions about the PC. To change them later, run
+   `sudo couchlink --setup`.
+2. Find your CEC addresses and add them to `/etc/couchlink/config.toml`. See
    [Configuration](docs/configuration.md).
-2. Set up the PC so the Pi can wake it and put it to sleep. See
+3. Set up the PC so the Pi can wake it and put it to sleep. See
    [Preparing the PC](docs/preparing-the-pc.md).
-3. Try a dry run, then go live. See
+4. Try a dry run, then go live. See
    [Installation](docs/installation.md#testing-with-a-dry-run).
 
 ## Updating

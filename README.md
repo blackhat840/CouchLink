@@ -452,24 +452,41 @@ sudo systemctl disable --now couchlink.service
 
 ## Updating
 
-Pull or copy the new files into the same folder, then run:
+From the folder you installed from, run:
 
 ```bash
 cd Couchlink
-git pull
 sudo bash install.sh --update
 ```
 
-`--update` does the following, in order:
+This downloads the latest release from GitHub and installs it. Other options:
 
-1. Skips the package step.
-2. Runs the offline tests.
-3. Checks your existing config against the new version.
-4. Installs the new script.
-5. Restarts the service if it is running.
+| Command | What it does |
+|---|---|
+| `sudo bash install.sh --update --release v2.2` | Installs that release |
+| `sudo bash install.sh --update --release` | Lists the releases and asks which one to install |
+| `bash install.sh --list-releases` | Lists the releases |
+| `sudo bash install.sh --update --local` | Installs the files next to `install.sh` instead, for example after `git pull` |
+
+An update does the following, in order:
+
+1. Downloads the release into a temporary folder and runs its installer.
+2. Skips the package step.
+3. Runs the offline tests.
+4. Checks your existing config against the new version.
+5. Installs the new script.
+6. Restarts the service if it is running.
 
 If the tests or the config check fail, nothing is changed and the installed
-version keeps running.
+version keeps running. Installing a release older than the installed version
+asks you to confirm. If the installed version is already the latest release,
+nothing happens.
+
+Releases are downloaded from GitHub over HTTPS. They are not signed.
+
+`install.sh` from version 2.2 and earlier does not download releases. Its
+`--update` installs the files next to it. Run `git pull` once to get the new
+installer.
 
 Your config is never overwritten. The newest example is saved next to it, so
 you can see what a new version added:

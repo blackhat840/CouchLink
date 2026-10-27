@@ -17,7 +17,8 @@ It shows:
   for how CouchLink tells them apart. The name comes from `pc_name`, or from the PC's
   own hostname if that is not set.
 - TV power and input, whether the PC answers on the network, Wake-on-LAN and
-  suspend attempts, the input guard, the sleep check and uptime.
+  suspend attempts, the input guard, the sleep check, and how long CouchLink
+  has been running.
 - Recent events and raw CEC traffic, each in its own tab.
 - Links to the raw JSON and to this repository.
 

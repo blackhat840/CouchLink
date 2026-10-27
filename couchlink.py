@@ -1409,7 +1409,7 @@ footer a { color: var(--muted); }
     <div class="panel tile" id="tSus"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Suspend</div><div class="value" id="vSus">-</div><div class="hint" id="hSus">-</div></div>
     <div class="panel tile" id="tGuard"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>Input guard</div><div class="value" id="vGuard">-</div><div class="hint" id="hGuard">-</div></div>
     <div class="panel tile" id="tSleep"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>Sleep check</div><div class="value" id="vSleep">-</div><div class="hint" id="hSleep">-</div></div>
-    <div class="panel tile" id="tUp"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
+    <div class="panel tile" id="tUp"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>CouchLink uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
   </section>
 
   <section class="panel console">
@@ -1525,7 +1525,10 @@ footer a { color: var(--muted); }
     accent("tSleep", left === null || left === undefined ? null : "var(--amber)");
 
     set("vUp", dur(d.uptime_seconds), "");
-    $("hUp").textContent = "PC input " + (d.pc_inputs || []).join(", ");
+    var started = new Date(Date.now() - d.uptime_seconds * 1000);
+    var at = started.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (d.uptime_seconds >= 86400) at = started.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + at;
+    $("hUp").textContent = "Since " + at;
 
     $("cLog").textContent = (d.recent_log || []).length;
     $("cCec").textContent = (d.recent_traffic || []).length;

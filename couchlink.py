@@ -87,6 +87,7 @@ DEFAULTS = {
     "hid_passthrough": True,
     "hidg_device": "/dev/hidg0",
     "dashboard_port": 8080,             # 0 disables the status page
+    "allow_actions": False,             # wake and sleep buttons on the status page, and the POST API behind them
 
     # timing (seconds)
     "away_debounce": 5,
@@ -246,6 +247,8 @@ def validate(settings):
         if s[key] and s[key] in norm_pcs:
             problems.append(f"{key} {s[key]} is also listed in pc_addresses. If the PC is "
                             "behind the soundbar, leave soundbar_address unset")
+    if not isinstance(s["allow_actions"], bool):
+        problems.append("allow_actions must be true or false")
     if not isinstance(s["watch_pc_power"], bool):
         problems.append("watch_pc_power must be true or false")
     if s["select_soundbar_audio"] and not s["soundbar_pc_audio_address"]:
@@ -368,6 +371,7 @@ class Controller:
         self.session_until = None       # remote session: keep the PC awake without the TV until then
         self.session_ended_at = None    # so the PC gets the usual away_debounce after a session
         self.session_seen_up = False    # the PC came up during this session, so stop sending WoL
+        self.last_action = {}           # action name -> when it was last asked for, for ACTION_COOLDOWN
         self.tv_boot_started = None     # we turned the TV on and are waiting for it to report on
         self.next_boot_poll = 0
         self.tv_settle_until = 0        # the TV reported on, re-claims run until then
@@ -494,10 +498,10 @@ class Controller:
             self.on_pc_name(event[1])
         elif kind == "cec_out":
             self.on_cec_out(event[1])
-        elif kind == "wake":
-            self.wake(tv=event[1])
-        elif kind == "end_session":
-            self.end_session("ended by hand")
+        elif kind == "action":      # ("action", name, params, source, reply queue or None)
+            answer = self.action(event[1], event[2], event[3])
+            if len(event) > 4 and event[4] is not None:
+                event[4].put(answer)
         elif kind == "pc_power":
             self.on_pc_power(event[1])
 
@@ -741,7 +745,10 @@ class Controller:
     def handle_pc_slept(self):
         """The PC went to sleep by itself (Steam menu, power button) while on screen."""
         self.pc_offline_since = None
-        went = "was turned off" if self.power_state() == "off" else "went to sleep"
+        self.apply_on_pc_sleep("was turned off" if self.power_state() == "off" else "went to sleep")
+
+    def apply_on_pc_sleep(self, went):
+        """Do what on_pc_sleep says for a PC that went to sleep while on screen."""
         mode = self.cfg.on_pc_sleep
         if mode == "switch":
             target = self.cfg.pc_sleep_switch_to
@@ -760,21 +767,24 @@ class Controller:
     def session_active(self):
         return self.session_until is not None and self.now() < self.session_until
 
-    def wake(self, tv):
+    def wake(self, tv, frm=""):
         """Wake the PC on request. With tv, like a controller wake: the TV turns on and
-        switches to the PC. Without, a remote session: the PC stays awake, the TV is left alone."""
+        switches to the PC. Without, a remote session: the PC stays awake, the TV is left alone.
+        Returns (result, message)."""
         if tv:
-            log("ACTION", "Wake PC and TV requested")
+            log("ACTION", f"Wake PC and TV requested{frm}")
             # Wake it even if it was put to sleep on this input or earlier wakes gave up
             self.wol_attempts = 0
             self.wake_gave_up = False
             self.pc_seen_up = bool(self.pc_online)
             self.pc_offline_since = None
             self.auto_switch_to_pc(requested=True)
-            return
+            return "waking_pc_and_tv", "Turning the TV on and switching it to the PC"
         if self.tv_input in self.pc_set:
-            log("ACTION", "Wake PC requested, but the TV is already on the PC. No remote session needed")
-            return
+            log("ACTION", f"Wake PC requested{frm}, but the TV is already on the PC. "
+                          "No remote session needed")
+            return "not_needed", "The TV is on the PC, so the PC stays awake anyway"
+        log("ACTION", f"Wake PC requested{frm}")
         t = self.now()
         hours = self.cfg.remote_session_hours
         extending = self.session_active()
@@ -788,8 +798,58 @@ class Controller:
             self.session_seen_up = False
             self.wol_attempts = 0
             self.wake_gave_up = False
-        log("ACTION", f"Remote session {'extended' if extending else 'started'}: keeping the PC awake "
-                      f"for {hours:g}h without the TV")
+        message = (f"Remote session {'extended' if extending else 'started'}: keeping the PC awake "
+                   f"for {hours:g}h without the TV")
+        log("ACTION", message)
+        if not self.session_seen_up:
+            self.send_wol(t)
+        return ("session_extended" if extending else "session_started"), message
+
+    def request_sleep(self, frm=""):
+        """Put the PC to sleep on request. Ends a remote session. Returns (result, message)."""
+        log("ACTION", f"Put PC to sleep requested{frm}")
+        if self.pc_online is not True:
+            log("ACTION", "The PC is not reachable, so it is already asleep or off")
+            return "already_asleep", "The PC is already asleep or off"
+        self.end_session("the PC was put to sleep")
+        self.session_ended_at = None    # sleep was asked for, so don't wait
+        if self.suspend_inflight:
+            return "suspending", "Already putting the PC to sleep"
+        if self.tv_input in self.pc_set and self.cfg.on_pc_sleep != "nothing":
+            self.apply_on_pc_sleep("was put to sleep")   # the TV does what it does when the PC sleeps itself
+        t = self.now()
+        self.sleep_gave_up = False
+        self.suspend_attempts += 1
+        self.last_suspend = t
+        self.suspend_inflight = True
+        log("SUSPEND", "Suspending the PC (requested)")
+        self.actions.suspend()
+        return "suspending", "Putting the PC to sleep"
+
+    def action(self, name, params=None, source=None):
+        """An action from the status page or API. Returns (ok, result, message)."""
+        params = params if isinstance(params, dict) else {}
+        frm = f" from {source}" if source else ""
+        t = self.now()
+        if name in ("wake", "sleep"):
+            prev = self.last_action.get(name)
+            if prev is not None and t - prev < ACTION_COOLDOWN:
+                what = "Wake" if name == "wake" else "Put PC to sleep"
+                log("ACTION", f"{what} requested{frm}, but one was asked for less than "
+                              f"{ACTION_COOLDOWN}s ago. Ignored")
+                return False, "too_soon", f"Wait {ACTION_COOLDOWN} seconds between requests"
+            self.last_action[name] = t
+        if name == "wake":
+            return (True,) + self.wake(bool(params.get("tv")), frm)
+        if name == "sleep":
+            return (True,) + self.request_sleep(frm)
+        if name == "end_session":
+            log("ACTION", f"End remote session requested{frm}")
+            if not self.session_active():
+                return True, "no_session", "No remote session is running"
+            self.end_session("ended by hand")
+            return True, "session_ended", "Remote session ended"
+        return False, "unknown_action", f"Unknown action: {name}"
 
     def end_session(self, why):
         if self.session_until is None:
@@ -1008,6 +1068,7 @@ class Controller:
             "on_pc_sleep_target": (self.input_name(self.cfg.pc_sleep_switch_to)
                                    if self.cfg.pc_sleep_switch_to else None),
             "power_poll_interval": self.cfg.power_poll_interval,
+            "actions_allowed": self.cfg.allow_actions,
             "remote_session_seconds_left": (int(self.session_until - t) if self.session_active() else None),
             "last_wol_seconds_ago": int(t - self.last_wol) if self.last_wol is not None else None,
             "last_suspend_seconds_ago": int(t - self.last_suspend) if self.last_suspend is not None else None,
@@ -1263,6 +1324,9 @@ def pinger(cfg, events):
 
 # The status page. One self-contained file (no external fonts or scripts, so it
 # works without internet access). It polls /api every 2 seconds.
+ACTION_COOLDOWN = 10        # seconds between two wakes, or two sleeps, asked for from the status page or API
+POST_ACTIONS = {"/api/wake": "wake", "/api/sleep": "sleep", "/api/session/end": "end_session"}
+
 DASHBOARD_HTML = r'''<!doctype html>
 <html lang="en">
 <head>
@@ -1344,7 +1408,25 @@ header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-
 .lost[hidden] { display: none; }
 .lost svg { width: 20px; height: 20px; flex: none; margin-top: 1px; color: var(--red); }
 .lost strong { display: block; color: #fee2e2; font-size: 15px; }
-body.stale .hero, body.stale .grid, body.stale .console { opacity: 0.5; }
+body.stale .hero, body.stale .grid, body.stale .console, body.stale .controls { opacity: 0.5; }
+
+/* wake and sleep buttons */
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 14px; padding: 12px 16px; }
+.controls[hidden] { display: none; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.buttons[hidden] { display: none; }
+.btn {
+  appearance: none; cursor: pointer; min-height: 44px; padding: 0 16px; border-radius: 10px;
+  font: 600 14px var(--sans); color: var(--text); background: rgba(8, 12, 20, 0.6);
+  border: 1px solid var(--panel-edge); transition: border-color 0.2s, color 0.2s;
+}
+.btn:hover { border-color: var(--cyan); }
+.btn.primary { color: var(--cyan); border-color: rgba(34, 211, 238, 0.6); }
+.btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.btn:disabled { opacity: 0.55; cursor: default; }
+.btn[hidden] { display: none; }
+.note { color: var(--muted); font-size: 14px; }
+.note code { font: 13px var(--mono); color: var(--text); }
 
 /* panels */
 .panel {
@@ -1532,6 +1614,16 @@ footer a { color: var(--muted); }
     </div>
   </section>
 
+  <section class="panel controls" id="controls" aria-label="Controls" hidden>
+    <div class="buttons" id="buttons">
+      <button class="btn primary" type="button" id="bWake">Wake PC</button>
+      <button class="btn" type="button" id="bWakeTv">Wake PC and TV</button>
+      <button class="btn" type="button" id="bEnd">End remote session</button>
+      <button class="btn" type="button" id="bSleep">Put PC to sleep</button>
+    </div>
+    <div class="note" id="ctlNote" role="status"></div>
+  </section>
+
   <section class="grid">
     <div class="panel tile" id="tTv"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>TV power</div><div class="value" id="vTv">-</div><div class="hint" id="hTv">-</div></div>
     <div class="panel tile" id="tIn"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11M4 17h16M15 4l3 3-3 3"/></svg>TV input</div><div class="value" id="vIn">-</div><div class="hint" id="hIn">-</div></div>
@@ -1600,7 +1692,9 @@ footer a { color: var(--muted); }
 
   function view(d) {
     var want = d.pc_should_be, up = d.pc_reachable, power = d.pc_power;
-    var waiting = want === "awake" ? "The TV is still on the PC's input" : "Waiting for the TV to switch to it";
+    var tvOff = d.tv_power === "standby" || d.tv_input_address === "standby";
+    var waiting = want === "awake" ? "The TV is still on the PC's input"
+                : tvOff ? "The TV is off" : "Waiting for the TV to switch to it";
     if (want === "awake" && up) return ["online", "Online", "Ready to play"];
     var left = d.remote_session_seconds_left;
     if (left !== null && left !== undefined && want !== "awake") {
@@ -1608,7 +1702,7 @@ footer a { color: var(--muted); }
       if (power === "restarting") return ["waking", "Restarting", "Remote session. Waiting for the PC to come back"];
       return ["waking", "Waking up", "Starting a remote session"];
     }
-    if (want === "asleep" && up) return ["sleeping", "Going to sleep", "The TV is on another input"];
+    if (want === "asleep" && up) return ["sleeping", "Going to sleep", tvOff ? "The TV is off" : "The TV is on another input"];
     if (power === "restarting") return ["waking", "Restarting", "Waiting for the PC to come back"];
     if (want === "awake" && d.wol_attempts) return ["waking", "Waking up", "Sending Wake-on-LAN to the PC"];
     if (power === "off") return ["off", "Off", waiting];
@@ -1647,7 +1741,10 @@ footer a { color: var(--muted); }
     put("hTv", every(d.power_poll_interval));
     accent("tTv", d.tv_power === "on" ? "var(--green)" : null);
 
-    if (d.tv_input_address) {
+    if (d.tv_input_address === "standby") {
+      set("vIn", "None", "dim");
+      put("hIn", "TV off for " + dur(d.tv_input_for_seconds));
+    } else if (d.tv_input_address) {
       set("vIn", d.tv_input, onPc ? "good" : "");
       put("hIn", "for " + dur(d.tv_input_for_seconds));
     } else {
@@ -1695,6 +1792,8 @@ footer a { color: var(--muted); }
     if (d.uptime_seconds >= 86400) at = started.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + at;
     put("hUp", "Since " + at);
 
+    controls(d);
+
     put("cLog", String((d.recent_log || []).length));
     put("cCec", String((d.recent_traffic || []).length));
     drawLines(false);
@@ -1702,6 +1801,49 @@ footer a { color: var(--muted); }
     put("updated", "Updated " + new Date().toLocaleTimeString());
   }
   function up(d) { return d.pc_reachable === true; }
+
+  // Wake and sleep buttons. Each shows only when it would do something.
+  var noteUntil = 0;
+  function note(text, hold) {
+    put("ctlNote", text);
+    noteUntil = hold ? Date.now() + 8000 : 0;
+  }
+  function controls(d) {
+    $("controls").hidden = false;
+    var allowed = !!d.actions_allowed;
+    $("buttons").hidden = !allowed;
+    var onPc = d.pc_should_be === "awake";
+    var session = d.remote_session_seconds_left !== null && d.remote_session_seconds_left !== undefined;
+    $("bWake").hidden = !allowed || onPc || session;
+    $("bWakeTv").hidden = !allowed || (onPc && up(d));
+    $("bEnd").hidden = !allowed || !session;
+    $("bSleep").hidden = !allowed || !up(d);
+    if (Date.now() < noteUntil) return;
+    if (!allowed) {
+      if (!$("ctlNote").querySelector("code")) {
+        $("ctlNote").innerHTML = "Wake and sleep buttons are off. Turn them on with <code>allow_actions = true</code> in the config.";
+      }
+    } else {
+      note(d.dry_run ? "Dry run: the buttons only log what they would do." :
+           session ? "The PC stays awake without the TV until the session ends." : "");
+    }
+  }
+  function act(btn, path, body, ask) {
+    if (ask && !window.confirm(ask)) return;
+    btn.disabled = true;
+    fetch(path, { method: "POST", cache: "no-store",
+                  headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+      .then(function (r) {
+        return r.json().catch(function () { return { message: "CouchLink answered " + r.status }; });
+      })
+      .then(function (j) { note(j.message || "Done", true); })
+      .catch(function () { note("Could not reach CouchLink", true); })
+      .then(function () { btn.disabled = false; poll(); });
+  }
+  $("bWake").addEventListener("click", function () { act(this, "/api/wake", { tv: false }); });
+  $("bWakeTv").addEventListener("click", function () { act(this, "/api/wake", { tv: true }); });
+  $("bEnd").addEventListener("click", function () { act(this, "/api/session/end"); });
+  $("bSleep").addEventListener("click", function () { act(this, "/api/sleep", {}, "Put the PC to sleep?"); });
 
   var LOG_RE = /^(\d\d:\d\d:\d\d) \[(\w+)\] \[([\w-]+)\] (.*)$/;
   var CEC_RE = /^(\d\d:\d\d:\d\d) .*?(>>|<<)\s*(.*)$/;
@@ -1809,10 +1951,69 @@ def status_page_urls(port, ip, hostname):
     return urls or [f"http://<pi-address>:{port}"]
 
 
-def start_dashboard(port, controller):
+def request_problem(headers):
+    """Why a POST to the API is refused, or None. Stops other web sites from sending actions:
+    a browser can only send a JSON body cross-site after asking first, and CouchLink never agrees."""
+    if (headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
+        return "Send the request as JSON (Content-Type: application/json)"
+    origin = headers.get("Origin")
+    if origin and origin != "null":
+        host = origin.split("://", 1)[-1].rstrip("/")
+        if host.lower() != (headers.get("Host") or "").lower():
+            return "Refused a request from another web site"
+    elif origin == "null":
+        return "Refused a request from another web site"
+    if (headers.get("Sec-Fetch-Site") or "same-origin") not in ("same-origin", "none"):
+        return "Refused a request from another web site"
+    return None
+
+
+def start_dashboard(port, controller, events=None):
+    """Serve the status page and /api. Returns the server, or None if the port is taken."""
     page = DASHBOARD_HTML.encode()
 
     class Handler(BaseHTTPRequestHandler):
+        def answer(self, status, ok, result, message):
+            body = json.dumps({"ok": ok, "result": result, "message": message}).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            name = POST_ACTIONS.get(self.path)
+            source = self.client_address[0]
+            if name is None:
+                return self.answer(404, False, "not_found", "No such action")
+            if not controller.cfg.allow_actions or events is None:
+                return self.answer(403, False, "actions_off",
+                                   "Actions are turned off. Set allow_actions = true in the config to use them")
+            problem = request_problem(self.headers)
+            if problem:
+                log("ACTION", f"Refused a request from {source} to {self.path}: {problem}", level="WARN")
+                return self.answer(403, False, "refused", problem)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if not 0 <= length <= 4096:
+                return self.answer(400, False, "bad_request", "The request body is too large")
+            try:
+                params = json.loads(self.rfile.read(length) or b"{}")
+            except ValueError:
+                params = None
+            if not isinstance(params, dict):
+                return self.answer(400, False, "bad_request", "The body must be a JSON object, such as {}")
+            reply = queue.Queue()
+            events.put(("action", name, params, source, reply))
+            try:
+                ok, result, message = reply.get(timeout=5)
+            except queue.Empty:
+                return self.answer(503, False, "no_answer", "CouchLink did not answer in time")
+            self.answer(200 if ok else 429 if result == "too_soon" else 400, ok, result, message)
+
         def do_GET(self):
             if self.path.startswith("/api"):
                 body = json.dumps(controller.snapshot(), indent=2).encode()
@@ -1837,10 +2038,14 @@ def start_dashboard(port, controller):
         server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     except OSError as e:
         log("STARTUP", f"Status page disabled, port {port} unavailable: {e}", level="WARN")
-        return
+        return None
     threading.Thread(target=server.serve_forever, daemon=True).start()
     urls = status_page_urls(port, own_address(controller.cfg.pc_host), socket.gethostname())
     log("STARTUP", f"Status page on {' or '.join(urls)}")
+    if controller.cfg.allow_actions:
+        log("STARTUP", "Wake and sleep buttons are on (allow_actions). The status page has no login, "
+                       "so keep it on a network you trust", level="WARN")
+    return server
 
 
 # --------------------------------------------------------------------------
@@ -2190,7 +2395,7 @@ def main(argv=None):
     if cfg.watch_pc_power:
         threading.Thread(target=power_watcher, args=(cfg, events), daemon=True).start()
     if cfg.dashboard_port:
-        start_dashboard(cfg.dashboard_port, ctl)
+        start_dashboard(cfg.dashboard_port, ctl, events)
 
     last_tick = 0.0
     while True:

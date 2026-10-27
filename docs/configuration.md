@@ -175,6 +175,7 @@ seconds.
 | `hid_passthrough` | `true` | Forward TV remote buttons to the PC as a USB keyboard. Needs the `--with-hid` install. |
 | `hidg_device` | `"/dev/hidg0"` | The USB keyboard device. |
 | `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
+| `allow_actions` | `false` | Wake and sleep buttons on the status page, and the API behind them. There is no login yet, so only turn this on for a network you trust. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
 
 ### Timing
 

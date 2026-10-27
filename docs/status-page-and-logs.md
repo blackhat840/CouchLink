@@ -22,6 +22,7 @@ It shows:
 - Wake-on-LAN and suspend attempts, the input guard, the sleep check and what
   happens after it, and how long CouchLink has been running. While the PC
   restarts, the sleep check shows "On hold".
+- The wake and sleep buttons, if they are turned on. See below.
 - Recent events and raw CEC traffic, each in its own tab.
 - Links to the raw JSON and to this repository.
 
@@ -36,6 +37,71 @@ refresh.
 
 `http://<pi>:8080/api` returns the same information as JSON. There is no
 login, so keep the page on a trusted network.
+
+## Wake and sleep buttons
+
+The status page can wake the PC and put it to sleep. The buttons are off by
+default. To turn them on, set this in `/etc/couchlink/config.toml` and restart
+CouchLink:
+
+```toml
+[behavior]
+allow_actions = true
+```
+
+There is no login yet, so anyone who can open the status page can use them.
+Only turn them on if the Pi is on a network you trust.
+
+Each button shows only when it would do something:
+
+| Button | What it does |
+|---|---|
+| Wake PC | Starts a [remote session](how-it-works.md#remote-sessions). The PC wakes and stays awake, and the TV is left alone. |
+| Wake PC and TV | Turns the TV on, switches it to the PC and wakes the PC, like waking it with a controller. |
+| End remote session | Ends the session. If the TV is on another input, the PC is suspended after `away_debounce`. |
+| Put PC to sleep | Suspends the PC over SSH and ends any session. If the TV is on the PC, `on_pc_sleep` runs as if the PC went to sleep by itself. |
+
+In a dry run, the buttons only log what they would do.
+
+## API
+
+The buttons use these requests, and scripts, phone shortcuts and Home
+Assistant can use them too. They need `allow_actions = true`.
+
+| Request | Does |
+|---|---|
+| `POST /api/wake` with `{"tv": false}` | Wake PC |
+| `POST /api/wake` with `{"tv": true}` | Wake PC and TV |
+| `POST /api/sleep` | Put PC to sleep |
+| `POST /api/session/end` | End remote session |
+
+Send a JSON body, even an empty `{}`, with `Content-Type: application/json`:
+
+```bash
+curl -X POST -H "Content-Type: application/json" -d '{"tv": false}' http://<pi>:8080/api/wake
+```
+
+Each answer is JSON, such as:
+
+```json
+{"ok": true, "result": "session_started", "message": "Remote session started: keeping the PC awake for 4h without the TV"}
+```
+
+| `result` | Meaning |
+|---|---|
+| `session_started`, `session_extended` | Wake PC started a remote session, or reset its time |
+| `not_needed` | Wake PC did nothing, because the TV is on the PC |
+| `waking_pc_and_tv` | Wake PC and TV is under way |
+| `suspending` | The PC is being put to sleep |
+| `already_asleep` | The PC is not reachable, so nothing was sent |
+| `session_ended`, `no_session` | The session ended, or none was running |
+| `too_soon` | HTTP 429. Only one wake, and one sleep, is accepted every 10 seconds |
+| `actions_off` | HTTP 403. `allow_actions` is off |
+| `refused` | HTTP 403. The request came from another web site, or was not JSON |
+
+`GET /api` only reads. Requests from other web sites are refused, so a page
+elsewhere can't wake the PC from your browser. Every request is logged with
+the address it came from, for example `[ACTION] Wake PC requested from 192.168.1.20`.
 
 ## Logs
 
@@ -53,6 +119,7 @@ sudo journalctl -u couchlink.service | grep -E "\[(INPUT|SUSPEND|WOL)\]"
 | `WOL` | Wake-on-LAN packets |
 | `SUSPEND` | Suspend attempts and results |
 | `WATCHER` | The PC becoming reachable or unreachable, and what CouchLink did about it |
+| `ACTION` | Buttons and API requests, and remote sessions starting and ending |
 | `RECOVER` | Automatic input switches being undone |
 | `TV` | Standby messages and TV power status |
 | `CEC-TX` | Every command CouchLink sends, with the reason |

@@ -103,6 +103,9 @@ Normally the PC is awake only while the TV is on its input. A remote session
 keeps it awake without the TV, for streaming to another device with Steam
 Link or Moonlight.
 
+Start one with the Wake PC button on the status page, or with the API. See
+[Wake and sleep buttons](status-page-and-logs.md#wake-and-sleep-buttons).
+
 CouchLink has two kinds of wake:
 
 | Wake | What happens |

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-CouchLink 2.5.1
+CouchLink 2.5.2
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -49,7 +49,7 @@ except ModuleNotFoundError:          # Python < 3.11
     except ModuleNotFoundError:
         tomllib = None
 
-VERSION = "2.5.1"
+VERSION = "2.5.2"
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 EX_CONFIG = 78
 
@@ -1186,7 +1186,7 @@ DASHBOARD_HTML = r'''<!doctype html>
   --panel-edge: rgba(148, 163, 184, 0.14);
   --text: #e6edf6;
   --muted: #8794aa;
-  --dim: #5b6679;
+  --dim: #737e91;
   --cyan: #22d3ee;
   --violet: #a78bfa;
   --pink: #f472b6;
@@ -1245,6 +1245,16 @@ header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-
 .live.off .dot { background: var(--red); box-shadow: 0 0 10px var(--red); animation: none; }
 .live.off { color: var(--red); }
 
+/* lost contact with CouchLink: say so and dim what is now stale */
+.lost {
+  display: flex; gap: 12px; align-items: flex-start; margin: 0 0 14px; padding: 12px 16px;
+  border-radius: 12px; background: #2a1414; border: 1px solid var(--red); color: #fecaca; font-size: 14px;
+}
+.lost[hidden] { display: none; }
+.lost svg { width: 20px; height: 20px; flex: none; margin-top: 1px; color: var(--red); }
+.lost strong { display: block; color: #fee2e2; font-size: 15px; }
+body.stale .hero, body.stale .grid, body.stale .console { opacity: 0.5; }
+
 /* panels */
 .panel {
   position: relative; border-radius: 16px; background: var(--panel);
@@ -1280,7 +1290,7 @@ body[data-state="sleeping"] .orb::before {
   color: var(--accent); text-shadow: 0 0 22px var(--accent-soft); text-transform: uppercase; line-height: 1.05;
 }
 .sub { color: var(--text); font-size: 15px; }
-.sub .muted { color: var(--muted); }
+.sub .muted { display: block; margin-top: 2px; color: var(--muted); font: 13px var(--mono); }
 
 /* signal path */
 .path { display: flex; align-items: center; gap: 0; margin-top: 16px; }
@@ -1326,7 +1336,7 @@ body[data-state="sleeping"] .orb::before {
 .tab {
   appearance: none; border: 0; background: none; cursor: pointer;
   font: 600 12px var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted);
-  padding: 9px 12px 11px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  min-height: 44px; padding: 0 12px; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--cyan); }
 .tab:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 6px; }
@@ -1365,8 +1375,12 @@ footer a { color: var(--muted); }
   .orb svg { width: 34px; height: 34px; }
   .state { font-size: 28px; }
   .sub { font-size: 14px; }
-  .sub .sep { display: none; }
-  .sub .muted { display: block; }
+  header { gap: 10px; }
+  .brand { gap: 10px; }
+  .brand svg { width: 32px; height: 32px; }
+  .word { font-size: 16px; letter-spacing: 0.18em; }
+  .chip { padding: 5px 8px; }
+  #version { display: none; }   /* the footer shows it, so Live stays on the header row */
   .path { margin-left: -80px; }
   .node { padding: 7px 9px; font-size: 11px; }
   .grid { gap: 10px; }
@@ -1400,9 +1414,14 @@ footer a { color: var(--muted); }
     <span class="live" id="live"><span class="dot"></span><span id="liveText">Connecting</span></span>
   </header>
 
+  <div class="lost" id="lost" role="status" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <div><strong>Lost contact with CouchLink</strong><span id="lostText">Check that the Pi is on and on the network.</span></div>
+  </div>
+
   <section class="panel hero" aria-live="polite">
     <div class="orb">
-      <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <svg viewBox="0 4 64 64" fill="none" aria-hidden="true">
         <path d="M18 20h28c6.5 0 10.5 5 11.6 12.4l1.8 12.2c.6 4.3-2.3 7.4-6.2 7.4-2.6 0-4.4-1.4-5.8-3.5L44 43H20l-3.4 5.5C15.2 50.6 13.4 52 10.8 52c-3.9 0-6.8-3.1-6.2-7.4l1.8-12.2C7.5 25 11.5 20 18 20z" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
         <path d="M17 28v9M12.5 32.5h9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
         <circle cx="44" cy="29" r="2.6" fill="currentColor"/><circle cx="49.5" cy="35" r="2.6" fill="currentColor"/>
@@ -1411,7 +1430,7 @@ footer a { color: var(--muted); }
     <div>
       <div class="kicker" id="kicker">Gaming PC</div>
       <div class="state" id="state">Connecting</div>
-      <div class="sub" id="sub"><span class="muted">Waiting for CouchLink</span></div>
+      <div class="sub" id="sub"><span id="subText">Waiting for CouchLink</span><span class="muted" id="subHost"></span></div>
       <div class="path" aria-label="Signal path">
         <span class="node" id="nTv"><span class="led"></span>TV</span>
         <span class="link" id="l1"></span>
@@ -1423,14 +1442,14 @@ footer a { color: var(--muted); }
   </section>
 
   <section class="grid">
-    <div class="panel tile" id="tTv"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>TV power</div><div class="value" id="vTv">-</div><div class="hint" id="hTv">-</div></div>
-    <div class="panel tile" id="tIn"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11M4 17h16M15 4l3 3-3 3"/></svg>TV input</div><div class="value" id="vIn">-</div><div class="hint" id="hIn">-</div></div>
-    <div class="panel tile" id="tNet"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/></svg>PC network</div><div class="value" id="vNet">-</div><div class="hint" id="hNet">-</div></div>
-    <div class="panel tile" id="tWol"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>Wake-on-LAN</div><div class="value" id="vWol">-</div><div class="hint" id="hWol">-</div></div>
-    <div class="panel tile" id="tSus"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Suspend</div><div class="value" id="vSus">-</div><div class="hint" id="hSus">-</div></div>
-    <div class="panel tile" id="tGuard"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>Input guard</div><div class="value" id="vGuard">-</div><div class="hint" id="hGuard">-</div></div>
-    <div class="panel tile" id="tSleep"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>Sleep check</div><div class="value" id="vSleep">-</div><div class="hint" id="hSleep">-</div></div>
-    <div class="panel tile" id="tUp"><div class="label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>CouchLink uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
+    <div class="panel tile" id="tTv"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>TV power</div><div class="value" id="vTv">-</div><div class="hint" id="hTv">-</div></div>
+    <div class="panel tile" id="tIn"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11M4 17h16M15 4l3 3-3 3"/></svg>TV input</div><div class="value" id="vIn">-</div><div class="hint" id="hIn">-</div></div>
+    <div class="panel tile" id="tNet"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 6h4M10 10h4"/><circle cx="12" cy="17" r="1"/></svg>PC</div><div class="value" id="vNet">-</div><div class="hint" id="hNet">-</div></div>
+    <div class="panel tile" id="tWol"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>Wake-on-LAN</div><div class="value" id="vWol">-</div><div class="hint" id="hWol">-</div></div>
+    <div class="panel tile" id="tSus"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Suspend</div><div class="value" id="vSus">-</div><div class="hint" id="hSus">-</div></div>
+    <div class="panel tile" id="tGuard"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>Input guard</div><div class="value" id="vGuard">-</div><div class="hint" id="hGuard">-</div></div>
+    <div class="panel tile" id="tSleep"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>Sleep check</div><div class="value" id="vSleep">-</div><div class="hint" id="hSleep">-</div></div>
+    <div class="panel tile" id="tUp"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>CouchLink uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
   </section>
 
   <section class="panel console">
@@ -1442,6 +1461,7 @@ footer a { color: var(--muted); }
   </section>
 
   <footer>
+    <span id="verFoot">CouchLink</span>
     <span id="updated">Not updated yet</span>
     <span>Refreshes every 2 seconds</span>
     <a href="/api">Raw JSON</a>
@@ -1455,6 +1475,9 @@ footer a { color: var(--muted); }
   var $ = function (id) { return document.getElementById(id); };
   var tab = "log";
   var last = null;
+  var lastOk = null;      // when the page last heard from CouchLink
+  var failures = 0;
+  var drawn = "";         // what the log box shows, so it is only redrawn when that changes
 
   function dur(s) {
     if (s === null || s === undefined) return "-";
@@ -1472,10 +1495,15 @@ footer a { color: var(--muted); }
     if (s % 60 === 0) return s === 60 ? "Checked every minute" : "Checked every " + s / 60 + " minutes";
     return "Checked every " + s + "s";
   }
-  function set(id, text, cls) {
+  // Only touch text that changed, so screen readers don't repeat the page every 2 seconds.
+  function put(id, text) {
     var el = $(id);
-    el.textContent = text;
-    if (cls !== undefined) el.className = "value " + cls;
+    if (el.textContent !== text) el.textContent = text;
+  }
+  function set(id, text, cls) {
+    put(id, text);
+    var el = $(id);
+    if (cls !== undefined && el.className !== "value " + cls) el.className = "value " + cls;
   }
   function accent(tileId, color) { $(tileId).style.setProperty("--tile-accent", color || "transparent"); }
 
@@ -1497,73 +1525,84 @@ footer a { color: var(--muted); }
     last = d;
     var v = view(d);
     document.body.setAttribute("data-state", v[0]);
-    $("state").textContent = v[1];
-    $("kicker").textContent = d.pc_name || "Gaming PC";
-    document.title = (d.pc_name ? d.pc_name + " | " : "") + "CouchLink";
-    var sub = $("sub");
-    sub.textContent = "";
-    sub.appendChild(document.createTextNode(v[2]));
-    sub.appendChild(span("sep", "  |  "));
-    sub.appendChild(span("muted", d.pc_host || "PC"));
+    put("state", v[1]);
+    put("kicker", d.pc_name || "Gaming PC");
+    var title = v[1] + " - " + (d.pc_name || "Gaming PC") + " | CouchLink";
+    if (document.title !== title) document.title = title;
+    put("subText", v[2]);
+    put("subHost", d.pc_host || "");
 
-    $("version").textContent = "v" + d.version;
+    put("version", "v" + d.version);
+    put("verFoot", "CouchLink " + d.version);
     $("dry").hidden = !d.dry_run;
 
     var tvOn = d.tv_power === "on";
     var onPc = d.pc_should_be === "awake";
     $("nTv").className = "node" + (tvOn ? " on" : "");
     $("nIn").className = "node" + (tvOn && d.tv_input_address ? " on" : "");
-    $("nInText").textContent = d.tv_input_address === "standby" ? "Off" : d.tv_input_address ? d.tv_input : "Input";
+    put("nInText", d.tv_input_address === "standby" ? "Off" : d.tv_input_address ? d.tv_input : "Input");
     $("nPc").className = "node" + (up(d) ? " on" : "");
     $("l1").className = "link" + (tvOn ? " on" : "");
     $("l2").className = "link" + (onPc && d.pc_reachable ? " on" : "");
 
     var power = d.tv_power === "on" ? ["On", "good"] : d.tv_power === "standby" ? ["Standby", "calm"] : ["Unknown", "dim"];
     set("vTv", power[0], power[1]);
-    $("hTv").textContent = every(d.power_poll_interval);
+    put("hTv", every(d.power_poll_interval));
     accent("tTv", d.tv_power === "on" ? "var(--green)" : null);
 
-    set("vIn", d.tv_input, onPc ? "good" : "");
-    $("hIn").textContent = "for " + dur(d.tv_input_for_seconds);
+    if (d.tv_input_address) {
+      set("vIn", d.tv_input, onPc ? "good" : "");
+      put("hIn", "for " + dur(d.tv_input_for_seconds));
+    } else {
+      set("vIn", "Unknown", "dim");
+      put("hIn", "Waiting for the TV");
+    }
     accent("tIn", onPc ? "var(--green)" : null);
 
     var offline = {asleep: "Asleep", off: "Off", restarting: "Restarting"}[d.pc_power] || "Offline";
-    set("vNet", d.pc_reachable === null ? "Checking" : d.pc_reachable ? "Reachable" : offline,
+    set("vNet", d.pc_reachable === null ? "Checking" : d.pc_reachable ? "On" : offline,
         d.pc_reachable ? "good" : d.pc_reachable === false ? "calm" : "dim");
-    $("hNet").textContent = d.pc_state_seconds === null || d.pc_state_seconds === undefined ? "-"
-        : (d.pc_state_since_start ? "for at least " : "for ") + dur(d.pc_state_seconds);
+    put("hNet", d.pc_state_seconds === null || d.pc_state_seconds === undefined ? "-"
+        : (d.pc_state_since_start ? "for at least " : "for ") + dur(d.pc_state_seconds));
     accent("tNet", d.pc_reachable ? "var(--green)" : null);
 
     set("vWol", d.wol_attempts ? d.wol_attempts + " sent" : "Idle", d.wol_attempts ? "cool" : "dim");
-    $("hWol").textContent = lastSent(d.last_wol_seconds_ago);
+    put("hWol", lastSent(d.last_wol_seconds_ago));
     accent("tWol", d.wol_attempts ? "var(--cyan)" : null);
 
     set("vSus", d.suspend_attempts ? d.suspend_attempts + " sent" : "Idle", d.suspend_attempts ? "warn" : "dim");
-    $("hSus").textContent = lastSent(d.last_suspend_seconds_ago);
+    put("hSus", lastSent(d.last_suspend_seconds_ago));
     accent("tSus", d.suspend_attempts ? "var(--amber)" : null);
 
     set("vGuard", d.guard_active ? "Armed" : "Idle", d.guard_active ? "cool" : "dim");
-    $("hGuard").textContent = "Undoes stray switches";
+    put("hGuard", "Undoes stray switches");
     accent("tGuard", d.guard_active ? "var(--cyan)" : null);
 
     var left = d.pc_sleep_check_seconds_left;
-    set("vSleep", left === null || left === undefined ? "Idle" : left + "s", left === null || left === undefined ? "dim" : "warn");
-    $("hSleep").textContent = {switch: "Then: TV to " + (d.on_pc_sleep_target || "another input"),
-                               standby: "Then: TV off"}[d.on_pc_sleep] || "Then: TV left alone";
-    accent("tSleep", left === null || left === undefined ? null : "var(--amber)");
+    var then = {switch: "Then: TV to " + (d.on_pc_sleep_target || "another input"),
+                standby: "Then: TV off"}[d.on_pc_sleep] || "Then: TV left alone";
+    var counting = left !== null && left !== undefined;
+    if (counting && d.pc_power === "restarting") {
+      set("vSleep", "On hold", "calm");     // a restart doesn't count as going to sleep
+      put("hSleep", "PC is restarting");
+      accent("tSleep", null);
+    } else {
+      set("vSleep", counting ? left + "s" : "Idle", counting ? "warn" : "dim");
+      put("hSleep", then);
+      accent("tSleep", counting ? "var(--amber)" : null);
+    }
 
     set("vUp", dur(d.uptime_seconds), "");
     var started = new Date(Date.now() - d.uptime_seconds * 1000);
     var at = started.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
     if (d.uptime_seconds >= 86400) at = started.toLocaleDateString([], { month: "short", day: "numeric" }) + ", " + at;
-    $("hUp").textContent = "Since " + at;
+    put("hUp", "Since " + at);
 
-    $("cLog").textContent = (d.recent_log || []).length;
-    $("cCec").textContent = (d.recent_traffic || []).length;
-    drawLines();
+    put("cLog", String((d.recent_log || []).length));
+    put("cCec", String((d.recent_traffic || []).length));
+    drawLines(false);
 
-    var now = new Date();
-    $("updated").textContent = "Updated " + now.toLocaleTimeString();
+    put("updated", "Updated " + new Date().toLocaleTimeString());
   }
   function up(d) { return d.pc_reachable === true; }
 
@@ -1577,11 +1616,14 @@ footer a { color: var(--muted); }
     return s;
   }
 
-  function drawLines() {
+  function drawLines(force) {
     if (!last) return;
     var box = $("lines");
-    var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     var items = tab === "log" ? (last.recent_log || []) : (last.recent_traffic || []);
+    var key = tab + "|" + items.length + "|" + (items[items.length - 1] || "");
+    if (!force && key === drawn) return;
+    drawn = key;
+    var atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
     var frag = document.createDocumentFragment();
     items.forEach(function (text) {
       var row = document.createElement("div");
@@ -1589,7 +1631,7 @@ footer a { color: var(--muted); }
       var m;
       if (tab === "log" && (m = LOG_RE.exec(text))) {
         row.appendChild(span("t", m[1]));
-        row.appendChild(span("lv " + m[2], m[2]));
+        if (m[2] !== "INFO") row.appendChild(span("lv " + m[2], m[2]));
         row.appendChild(span("c", m[3]));
         row.appendChild(span("m", m[4]));
       } else if (tab === "cec" && (m = CEC_RE.exec(text))) {
@@ -1611,7 +1653,7 @@ footer a { color: var(--muted); }
     tab = name;
     $("tabLog").setAttribute("aria-selected", name === "log");
     $("tabCec").setAttribute("aria-selected", name === "cec");
-    drawLines();
+    drawLines(true);
     var box = $("lines");
     box.scrollTop = box.scrollHeight;
   }
@@ -1619,18 +1661,28 @@ footer a { color: var(--muted); }
   $("tabCec").addEventListener("click", function () { selectTab("cec"); });
 
   function setLive(ok) {
-    $("live").className = "live" + (ok ? "" : " off");
-    $("liveText").textContent = ok ? "Live" : "Offline";
-    if (!ok && !last) {
-      $("state").textContent = "No connection";
-      $("sub").textContent = "CouchLink is not answering";
+    failures = ok ? 0 : failures + 1;
+    var lost = failures >= 2;               // one missed refresh can be a blip
+    $("live").className = "live" + (lost ? " off" : "");
+    put("liveText", lost ? "No contact" : "Live");
+    if (lost && !last) {
+      put("state", "No connection");
+      put("subText", "CouchLink is not answering");
+    }
+    var stale = lost && last !== null;
+    document.body.classList.toggle("stale", stale);
+    $("lost").hidden = !stale;
+    if (stale) {
+      put("lostText", "Showing what it last reported at " +
+          lastOk.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) +
+          ". Check that the Pi is on and on the network.");
     }
   }
 
   function poll() {
     fetch("/api", { cache: "no-store" })
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (d) { render(d); setLive(true); })
+      .then(function (d) { lastOk = new Date(); render(d); setLive(true); })
       .catch(function () { setLive(false); });
   }
   poll();

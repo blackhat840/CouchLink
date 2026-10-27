@@ -1,13 +1,13 @@
 # Status page and logs
 
-Following what Couchlink does, on the status page or in the system log.
+Following what CouchLink does, on the status page or in the system log.
 
 ## Status page
 
 Open `http://<pi>:8080` on a phone or computer on the same network. It updates
 every 2 seconds.
 
-![The Couchlink status page with the PC online on HDMI 1.2](dashboard.png)
+![The CouchLink status page with the PC online on HDMI 1.2](dashboard.png)
 
 It shows:
 
@@ -39,10 +39,10 @@ sudo journalctl -u couchlink.service | grep -E "\[(INPUT|SUSPEND|WOL)\]"
 | `INPUT` | Every input change, with the message and sender that caused it |
 | `WOL` | Wake-on-LAN packets |
 | `SUSPEND` | Suspend attempts and results |
-| `WATCHER` | The PC becoming reachable or unreachable, and what Couchlink did about it |
+| `WATCHER` | The PC becoming reachable or unreachable, and what CouchLink did about it |
 | `RECOVER` | Automatic input switches being undone |
 | `TV` | Standby messages and TV power status |
-| `CEC-TX` | Every command Couchlink sends, with the reason |
+| `CEC-TX` | Every command CouchLink sends, with the reason |
 | `CEC` | Raw traffic, when `raw_debug` is on |
 | `KEY` | Remote buttons forwarded to the PC |
 | `DRY-RUN` | What would have happened |

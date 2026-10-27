@@ -1,6 +1,6 @@
 # How it works
 
-What Couchlink does in detail, the layout it was built on, the rule it enforces, and the CEC messages it listens for.
+What CouchLink does in detail, the layout it was built on, the rule it enforces, and the CEC messages it listens for.
 
 ## Why this exists
 
@@ -16,11 +16,11 @@ you switched inputs or turned the TV off.
   off. It waits a few seconds first, so flipping past the PC's input on the
   way to another one does not count.
 - **Switches the TV to the PC** when the PC wakes up on its own, for example
-  from a controller or the power button. If the TV is off, Couchlink turns it
+  from a controller or the power button. If the TV is off, CouchLink turns it
   on, waits for it to report that it is on, then claims the PC's input a few
   more times while the TV finishes starting.
 - **Handles Sleep from the Steam menu.** When the PC goes to sleep by itself,
-  Couchlink can switch the TV to another input, turn the TV off, or leave it
+  CouchLink can switch the TV to another input, turn the TV off, or leave it
   alone. It never wakes the PC back up.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
@@ -44,11 +44,11 @@ The Pi runs one program, `couchlink`, as a systemd service.
 ```
 
 This is the layout it was built on. The PC can also plug straight into the TV.
-Any layout works as long as you tell Couchlink which address belongs to the PC.
+Any layout works as long as you tell CouchLink which address belongs to the PC.
 
 ## The rule
 
-| TV input | PC should be | What Couchlink does |
+| TV input | PC should be | What CouchLink does |
 |---|---|---|
 | The PC's input | Awake | Sends Wake-on-LAN until the PC answers ping |
 | Any other input | Asleep | Waits 5 seconds, then suspends the PC over SSH |
@@ -57,7 +57,7 @@ Any layout works as long as you tell Couchlink which address belongs to the PC.
 
 ## CEC messages it listens for
 
-Couchlink learns which input is active from these messages:
+CouchLink learns which input is active from these messages:
 
 | Opcode | Name | Typical sender |
 |---|---|---|
@@ -68,7 +68,7 @@ Couchlink learns which input is active from these messages:
 | `36` | Standby | The TV turning off (or another device asking it to) |
 | `90` | Report Power Status | The TV answering "are you on?" |
 
-Different TVs use different messages, so Couchlink watches all of them.
+Different TVs use different messages, so CouchLink watches all of them.
 
 ---
 

@@ -1,10 +1,10 @@
 # Hardware and systems
 
-Which PC systems Couchlink supports, and the TVs and soundbars it has been tested with.
+Which PC systems CouchLink supports, and the TVs and soundbars it has been tested with.
 
 ## Supported systems
 
-Couchlink itself runs on the Raspberry Pi. The PC only needs an SSH server, a
+CouchLink itself runs on the Raspberry Pi. The PC only needs an SSH server, a
 sudo rule that allows suspend, and a way to be woken. Nothing is installed on
 the PC.
 
@@ -18,7 +18,7 @@ If you run it on an untested system, please open an issue saying how it went.
 
 ## Tested hardware
 
-Couchlink has run on two setups. Their TVs behave quite differently on the
+CouchLink has run on two setups. Their TVs behave quite differently on the
 CEC bus.
 
 ### Current setup: Vizio TV and soundbar

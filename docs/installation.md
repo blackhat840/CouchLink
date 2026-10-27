@@ -1,6 +1,6 @@
 # Installation
 
-Setting up Couchlink on the Raspberry Pi, testing it, and keeping it up to date.
+Setting up CouchLink on the Raspberry Pi, testing it, and keeping it up to date.
 
 ## What you need
 
@@ -51,8 +51,8 @@ Wired Ethernet is the most reliable way to wake the PC. See
    (see [Configuration](configuration.md#the-pcs-settings)) and prints the next
    steps.
 
-   If you prefer git, `git clone https://github.com/blackhat840/Couchlink.git`,
-   then `cd Couchlink` and `sudo bash install.sh` installs the files from the
+   If you prefer git, `git clone https://github.com/blackhat840/CouchLink.git`,
+   then `cd CouchLink` and `sudo bash install.sh` installs the files from the
    clone instead.
 
 5. **Find your CEC addresses** and fill in the config. See

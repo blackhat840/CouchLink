@@ -391,7 +391,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(couchlink.parse_key("DEBUG: key pressed: fast forward (49)"), "fast forward")
 
     def test_version_matches_docstring(self):
-        self.assertIn(f"Couchlink {couchlink.VERSION}\n", couchlink.__doc__)
+        self.assertIn(f"CouchLink {couchlink.VERSION}\n", couchlink.__doc__)
 
     def test_status_page_links_to_repo(self):
         self.assertIn('href="https://github.com/blackhat840/CouchLink"', couchlink.DASHBOARD_HTML)
@@ -687,10 +687,10 @@ class InstallerTests(unittest.TestCase):
             f.write('pc_host = "192.168.1.50"\npc_mac = "aa:bb:cc:dd:ee:01"\n'
                     'pc_addresses = ["12:00"]\npi_address = "40:00"\n')
         self.releases = [
-            {"tag_name": "v2.3", "name": "Couchlink 2.3", "published_at": "2026-11-01T00:00:00Z"},
-            {"tag_name": "v2.2", "name": "Couchlink 2.2", "published_at": "2026-10-27T00:00:00Z"},
+            {"tag_name": "v2.3", "name": "CouchLink 2.3", "published_at": "2026-11-01T00:00:00Z"},
+            {"tag_name": "v2.2", "name": "CouchLink 2.2", "published_at": "2026-10-27T00:00:00Z"},
             {"tag_name": "v2.4", "name": "Unfinished", "draft": True},
-            {"tag_name": "v2.0", "name": "Couchlink 2.0", "published_at": "2026-09-01T00:00:00Z"},
+            {"tag_name": "v2.0", "name": "CouchLink 2.0", "published_at": "2026-09-01T00:00:00Z"},
         ]
         self.latest = "v2.3"
         self.archives = {r["tag_name"]: release_archive(r["tag_name"], {"install.sh": STUB_INSTALLER})
@@ -825,7 +825,7 @@ class InstallerTests(unittest.TestCase):
         self.not_installed()
         code, out = self.install("--update")
         self.assertNotEqual(code, 0)
-        self.assertIn("Run without --update to install Couchlink", out)
+        self.assertIn("Run without --update to install CouchLink", out)
         self.assertIsNone(self.stub_ran())
 
     def test_local_without_the_files_explains(self):
@@ -948,6 +948,18 @@ class SetupTests(unittest.TestCase):
 
 
 class DocsTests(unittest.TestCase):
+    def test_name_is_spelled_couchlink_with_a_capital_l(self):
+        wrong = "Couch" + "link"
+        names = ["README.md", "CONTRIBUTING.md", "couchlink.py", "install.sh", "couchlink.example.toml"]
+        docs = os.path.join(HERE, "docs")
+        if os.path.isdir(docs):
+            names += [os.path.join("docs", n) for n in os.listdir(docs) if n.endswith(".md")]
+        for name in names:
+            path = os.path.join(HERE, name)
+            if os.path.exists(path):
+                with open(path) as f:
+                    self.assertNotIn(wrong, f.read(), f"{name} spells it {wrong}, use CouchLink")
+
     def test_links_between_pages_resolve(self):
         """Every relative link in the README and docs/ points to a file that
         exists, and every #anchor to a heading in it."""

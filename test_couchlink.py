@@ -1566,17 +1566,57 @@ class ActionTests(unittest.TestCase):
         s.ev(("action", "wake", {"tv": False}, "192.168.1.20", q))
         self.assertEqual(q.get_nowait()[:2], (True, "session_started"))
 
-    def test_allow_actions_must_be_bool(self):
-        _, problems = couchlink.validate(dict(BASE, allow_actions="yes please"))
-        self.assertTrue(any("allow_actions" in p for p in problems))
-        self.assertFalse(couchlink.DEFAULTS["allow_actions"])
+    def test_api_key_hash_setting(self):
+        self.assertEqual(couchlink.DEFAULTS["api_key_hash"], "")      # off by default
+        _, problems = couchlink.validate(dict(BASE, api_key_hash="hunter2"))
+        self.assertTrue(any("api_key_hash" in p for p in problems))   # a plain key is refused
+        _, problems = couchlink.validate(dict(BASE, api_key_hash=couchlink.hash_api_key("k")))
+        self.assertEqual(problems, [])
+
+    def test_new_api_key_saves_only_the_hash(self):
+        d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, d)
+        path = os.path.join(d, "config.toml")
+        shutil.copy(os.path.join(HERE, "couchlink.example.toml"), path)
+        lines = []
+        self.assertEqual(couchlink.new_api_key(path, out=lines.append), 0)
+        key = lines[0].split(": ", 1)[1]
+        text = open(path).read()
+        self.assertNotIn(key, text)
+        settings, problems = couchlink.load_config(path)
+        self.assertEqual(problems, [])
+        self.assertEqual(settings["api_key_hash"], couchlink.hash_api_key(key))
+        couchlink.new_api_key(path, out=lines.append)               # a new key replaces it
+        self.assertEqual(open(path).read().count("api_key_hash ="), 1)
+        self.assertNotEqual(couchlink.load_config(path)[0]["api_key_hash"], couchlink.hash_api_key(key))
+
+    def test_bearer_key(self):
+        self.assertEqual(couchlink.bearer_key({"Authorization": "Bearer abc"}), "abc")
+        self.assertEqual(couchlink.bearer_key({"Authorization": "bearer  abc "}), "abc")
+        self.assertIsNone(couchlink.bearer_key({"Authorization": "Basic abc"}))
+        self.assertIsNone(couchlink.bearer_key({}))
+
+    def test_key_guard_locks_out_for_a_minute(self):
+        clock = Clock()
+        g = couchlink.KeyGuard(clock)
+        for _ in range(5):
+            self.assertFalse(g.locked("192.168.1.20"))
+            g.failed("192.168.1.20")
+        self.assertTrue(g.locked("192.168.1.20"))
+        self.assertFalse(g.locked("192.168.1.21"))                  # only that address
+        clock.t += 61
+        self.assertFalse(g.locked("192.168.1.20"))
 
 
 class ApiTests(unittest.TestCase):
     """POST /api/wake, /api/sleep and /api/session/end over real HTTP."""
 
-    def start(self, **overrides):
+    KEY = "test-key-0123456789abcdef"
+
+    def start(self, keyed=True, **overrides):
         import queue
+        if keyed:
+            overrides["api_key_hash"] = couchlink.hash_api_key(self.KEY)
         self.sim = Sim(**dict(REAL, **overrides))
         self.sim.pc(False)
         self.sim.ev(msg("5f:81:11:00"))
@@ -1595,10 +1635,12 @@ class ApiTests(unittest.TestCase):
         self.addCleanup(self.server.shutdown)
         self.addCleanup(events.put, None)
 
-    def post(self, path, body=b"{}", ctype="application/json", **headers):
+    def post(self, path, body=b"{}", ctype="application/json", key=KEY, **headers):
         req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=body, method="POST")
         if ctype:
             req.add_header("Content-Type", ctype)
+        if key:
+            req.add_header("Authorization", f"Bearer {key}")
         for k, v in headers.items():
             req.add_header(k.replace("_", "-"), v)
         try:
@@ -1607,48 +1649,69 @@ class ApiTests(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
 
-    def test_off_by_default(self):
-        self.start()
+    def test_off_without_a_key(self):
+        self.start(keyed=False)
         status, body = self.post("/api/wake", b'{"tv": false}')
         self.assertEqual((status, body["result"]), (403, "actions_off"))
         self.assertEqual(self.sim.act.wols, 0)
 
     def test_wake_starts_session(self):
-        self.start(allow_actions=True)
+        self.start()
         status, body = self.post("/api/wake", b'{"tv": false}')
         self.assertEqual((status, body["ok"], body["result"]), (200, True, "session_started"))
         self.assertEqual(self.sim.act.wols, 1)
         self.assertTrue(any("Wake PC requested from 127.0.0.1" in line for line in couchlink.LOG_RING))
 
     def test_wake_pc_and_tv(self):
-        self.start(allow_actions=True)
+        self.start()
         status, body = self.post("/api/wake", b'{"tv": true}')
         self.assertEqual(body["result"], "waking_pc_and_tv")
         self.assertIn("on 0", self.sim.act.cec)
 
     def test_end_session(self):
-        self.start(allow_actions=True)
+        self.start()
         self.post("/api/wake", b'{"tv": false}')
         status, body = self.post("/api/session/end")
         self.assertEqual((status, body["result"]), (200, "session_ended"))
 
     def test_sleep(self):
-        self.start(allow_actions=True)
+        self.start()
         self.sim.pc(True)
         status, body = self.post("/api/sleep")
         self.assertEqual(body["result"], "suspending")
         self.assertEqual(self.sim.act.suspends, 1)
 
     def test_rate_limited(self):
-        self.start(allow_actions=True)
+        self.start()
         self.post("/api/wake", b'{"tv": false}')
         status, body = self.post("/api/wake", b'{"tv": false}')
         self.assertEqual((status, body["result"]), (429, "too_soon"))
 
-    def test_needs_json(self):
-        self.start(allow_actions=True)
+    def test_needs_the_key(self):
+        self.start()
+        for key in (None, "wrong"):
+            status, body = self.post("/api/wake", b'{"tv": false}', key=key)
+            self.assertEqual((status, body["result"]), (401, "bad_key"))
+        self.assertEqual(self.sim.act.wols, 0)
+        self.assertTrue(any("Wrong API key from 127.0.0.1" in line for line in couchlink.LOG_RING))
+
+    def test_locked_out_after_wrong_keys(self):
+        self.start()
+        for _ in range(5):
+            self.post("/api/session/end", key="wrong")
+        status, body = self.post("/api/wake", b'{"tv": false}')      # even with the right key
+        self.assertEqual((status, body["result"]), (429, "locked_out"))
+        self.assertEqual(self.sim.act.wols, 0)
+
+    def test_no_body_or_content_type_needed(self):
+        self.start()
+        status, body = self.post("/api/session/end", body=b"", ctype=None)
+        self.assertEqual((status, body["result"]), (200, "no_session"))
+
+    def test_body_must_be_json_object(self):
+        self.start()
         status, body = self.post("/api/wake", b"tv=false", ctype="application/x-www-form-urlencoded")
-        self.assertEqual((status, body["result"]), (403, "refused"))
+        self.assertEqual((status, body["result"]), (400, "bad_request"))
         status, body = self.post("/api/wake", b"not json")
         self.assertEqual((status, body["result"]), (400, "bad_request"))
         status, body = self.post("/api/wake", b"[1]")
@@ -1656,7 +1719,7 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.sim.act.wols, 0)
 
     def test_other_sites_refused(self):
-        self.start(allow_actions=True)
+        self.start()
         for headers in ({"Origin": "http://evil.example"}, {"Origin": "null"},
                         {"Sec_Fetch_Site": "cross-site"}):
             status, body = self.post("/api/wake", b'{"tv": false}', **headers)
@@ -1664,17 +1727,18 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.sim.act.wols, 0)
 
     def test_same_site_allowed(self):
-        self.start(allow_actions=True)
+        self.start()
         status, body = self.post("/api/wake", b'{"tv": false}', Origin=f"http://127.0.0.1:{self.port}",
                                  Sec_Fetch_Site="same-origin")
         self.assertEqual(status, 200)
 
     def test_unknown_path_and_get_stays_read_only(self):
-        self.start(allow_actions=True)
+        self.start()
         self.assertEqual(self.post("/api/reboot")[0], 404)
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/wake", timeout=5) as r:
             snap = json.loads(r.read())                 # GET only reads
-        self.assertTrue(snap["actions_allowed"])
+        self.assertTrue(snap["actions_enabled"])
+        self.assertNotIn("api_key_hash", json.dumps(snap))              # never shown
         self.assertEqual(self.sim.act.wols, 0)
 
 

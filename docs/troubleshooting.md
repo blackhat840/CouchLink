@@ -15,6 +15,7 @@ Common problems, what to check, and the known limitations.
 | `SSH ended with 255`, then `Confirmed: the PC went to sleep` | Normal. The connection drops as the PC suspends. |
 | Suspend fails with a password prompt | The sudoers rule is missing or is being overridden. Check the file name starts with `zzz-`. |
 | `Host key verification failed` | The SSH key was set up as your user, not root. Redo [step 5 of Preparing the PC](preparing-the-pc.md#5-give-the-pi-a-key-the-pc-trusts) with `sudo`. |
+| `No route to host` on SSH | The PC is asleep or off, or on Bazzite the firewall blocks SSH. Wake the PC and try again. On Bazzite, run `sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --reload` on the PC. |
 | `Connection refused` or timeouts on SSH | sshd is not running, or the firewall blocks it. On Bazzite, allow the `ssh` service in firewalld. |
 | SSH asks for a password even after `ssh-copy-id` | On Bazzite, run `restorecon -Rv ~/.ssh` on the PC. Also check `ssh_user` matches your account. |
 | Suspend stops working after a SteamOS update | Check that `/etc/sudoers.d/zzz-cec-suspend` and sshd survived the update. |

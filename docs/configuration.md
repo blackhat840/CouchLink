@@ -97,7 +97,9 @@ sudo bash install.sh --setup
   for the wake and sleep buttons
 
 Then it offers to set up the SSH key (step 5 of
-[Preparing the PC](preparing-the-pc.md)). Press Enter to keep the value in
+[Preparing the PC](preparing-the-pc.md)). If the PC is asleep, it offers to
+wake it first, and pauses `couchlink.service` so the PC isn't put back to
+sleep. If SSH fails, it says why and what to do. Press Enter to keep the value in
 brackets. It keeps the comments in the file and saves the previous version as
 `config.toml.bak`.
 

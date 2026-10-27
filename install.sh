@@ -30,11 +30,13 @@
 #     --list-releases            list the releases
 #     --local                    install the files next to this script, never
 #                                download (after git pull, or files copied by hand)
+#     --test                     run the offline tests before installing. They
+#                                check the code, not your Pi, and each release
+#                                already passed them, so they are off by default
 #
 # First install:
 #   1. Installs cec-utils and ping
-#   2. Runs the offline tests (if test_couchlink.py is here), without the
-#      installer's own tests, which are slow on a Pi Zero
+#   2. With --test, runs the offline tests, without the installer's own tests
 #   3. Installs the program as /usr/local/bin/couchlink
 #   4. Creates /etc/couchlink/config.toml from the example (never overwrites yours)
 #   5. Installs couchlink.service, left disabled until you've tested
@@ -54,6 +56,7 @@ TEST_MODE="${INSTALL_TEST:-0}"   # for testing only: skip apt, systemctl
 WITH_HID=0
 UPDATE=0
 LOCAL=0
+RUN_TESTS=0
 LIST=0
 PICK=0
 SETUP=""
@@ -64,6 +67,7 @@ while [ $# -gt 0 ]; do
         --with-hid) WITH_HID=1 ;;
         --update) UPDATE=1 ;;
         --local) LOCAL=1 ;;
+        --test) RUN_TESTS=1 ;;
         --list-releases) LIST=1 ;;
         --setup) SETUP=setup ;;
         --setup-cec) SETUP=setup-cec ;;
@@ -250,6 +254,7 @@ if [ "$REMOTE" = 1 ]; then
     ARGS=()
     [ "$UPDATE" = 0 ] || ARGS+=(--update)
     [ "$WITH_HID" = 0 ] || ARGS+=(--with-hid)
+    [ "$RUN_TESTS" = 0 ] || ARGS+=(--test)
     COUCHLINK_RELEASE_TAG="$RELEASE" bash "$SRC/install.sh" "${ARGS[@]}"
     exit 0
 fi
@@ -288,7 +293,7 @@ else
 fi
 
 # ---------------------------------------------------------------- tests
-if [ -f "$HERE/test_couchlink.py" ]; then
+if [ "$RUN_TESTS" = 1 ] && [ -f "$HERE/test_couchlink.py" ]; then
     say "Running offline tests"
     if ( cd "$HERE" && python3 test_couchlink.py --quick ) > "$TEST_LOG" 2>&1; then
         grep -aE "^Ran|^OK" "$TEST_LOG"
@@ -296,7 +301,7 @@ if [ -f "$HERE/test_couchlink.py" ]; then
         tail -25 "$TEST_LOG"
         die "Offline tests failed, so nothing was installed. Full log: $TEST_LOG"
     fi
-else
+elif [ "$RUN_TESTS" = 1 ]; then
     warn "test_couchlink.py not found, skipping offline tests"
 fi
 

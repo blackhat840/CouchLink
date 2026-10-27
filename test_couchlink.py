@@ -954,12 +954,27 @@ class InstallerTests(unittest.TestCase):
             f.write("import os\n"
                     f"open({probe!r}, 'w').write(os.environ.get('COUCHLINK_RELEASE_TAG', 'unset'))\n"
                     "print('Ran 1 test')\nprint('OK')\n")
-        code, out = self.install("--update", COUCHLINK_RELEASE_TAG="v9.9")
+        code, out = self.install("--update", "--test", COUCHLINK_RELEASE_TAG="v9.9")
         self.assertEqual(code, 0, out)
         self.assertIn("(release v9.9)", out)
         self.assertIsNone(self.stub_ran())               # installed locally, nothing downloaded
         with open(probe) as f:
             self.assertEqual(f.read(), "unset")
+
+    def test_tests_run_only_with_test(self):
+        with open(os.path.join(self.src, "test_couchlink.py"), "w") as f:
+            f.write("import sys\nprint('Ran 1 test with', sys.argv[1:])\nprint('OK')\n")
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("Running offline tests", out)
+        code, out = self.install("--update", "--local", "--test")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Ran 1 test with ['--quick']", out)
+
+    def test_test_flag_is_passed_to_a_downloaded_release(self):
+        code, out = self.install("--update", "--test")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.3 --update --test")
 
     def test_local_update_installs_files_next_to_the_script(self):
         code, out = self.install("--update", "--local")
@@ -982,15 +997,28 @@ class SetupTests(unittest.TestCase):
         self.output = []
         self.ssh_calls = []
 
-    def setup(self, answers, found_mac=None):
+    def setup(self, answers, found_mac=None, pc_awake=True, wakes=True, ssh_works=True, running=True):
         answers = list(answers)
+        self.service_calls, self.wake_calls = [], []
 
         def ask(question):
             self.assertTrue(answers, f"unexpected question: {question}")
             return answers.pop(0)
+
+        def ssh_setup(host, user, out):
+            self.ssh_calls.append((host, user))
+            return ssh_works
+
+        def waker(host, out):
+            self.wake_calls.append(host)
+            return wakes
+
+        def service(action):
+            self.service_calls.append(action)
+            return running
         code = couchlink.run_setup(self.path, ask=ask, out=self.output.append,
-                                   mac_finder=lambda host: found_mac,
-                                   ssh_setup=lambda host, user, out: self.ssh_calls.append((host, user)))
+                                   mac_finder=lambda host: found_mac, ssh_setup=ssh_setup,
+                                   pc_check=lambda host: pc_awake, waker=waker, service=service)
         self.assertEqual(answers, [], "not every answer was used")
         settings, problems = couchlink.load_config(self.path)
         self.assertEqual(problems, [])                   # no typos or broken TOML
@@ -1074,6 +1102,64 @@ class SetupTests(unittest.TestCase):
         code, s = self.setup(["", "", "", "", "", "", "", "n"])          # Enter keeps them all
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
         self.assertEqual(s["api_key_hash"], couchlink.hash_api_key(key))
+
+    def test_ssh_waits_for_a_sleeping_pc_to_wake(self):
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "y"], pc_awake=False)
+        self.assertEqual(self.wake_calls, ["192.168.1.50"])
+        self.assertEqual(self.service_calls, ["stop", "start"])     # paused so it isn't suspended again
+        self.assertEqual(self.ssh_calls, [("192.168.1.50", "deck")])
+        self.assertIn("doesn't answer", "\n".join(self.output))
+
+    def test_ssh_skipped_when_the_pc_stays_asleep(self):
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "y"], pc_awake=False, wakes=False)
+        self.assertEqual(self.ssh_calls, [])
+        text = "\n".join(self.output)
+        self.assertIn("needs the PC to be on", text)
+        self.assertIn("SSH to the PC doesn't work yet", text)
+        self.assertNotIn("The config is complete", text)
+
+    def test_ssh_not_woken_if_declined(self):
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "n"], pc_awake=False)
+        self.assertEqual((self.wake_calls, self.ssh_calls, self.service_calls), ([], [], []))
+
+    def test_failed_ssh_is_not_called_complete(self):
+        with open(self.path) as f:
+            text = f.read().replace("pc_addresses = []", 'pc_addresses = ["12:00"]')
+        with open(self.path, "w") as f:
+            f.write(couchlink.set_config_value(text, "pi_address", "40:00"))
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y"], ssh_works=False)
+        text = "\n".join(self.output)
+        self.assertIn("SSH to the PC doesn't work yet", text)
+        self.assertNotIn("The config is complete", text)
+
+    def test_ssh_problem_advice(self):
+        p = couchlink.ssh_problem
+        self.assertIn("asleep or off", p("ssh: connect to host 192.168.1.50 port 22: No route to host"))
+        self.assertIn("firewall-cmd", p("ssh: connect to host 192.168.1.50 port 22: No route to host"))
+        self.assertIn("enable --now sshd", p("ssh: connect to host 192.168.1.50 port 22: Connection refused"))
+        self.assertIn("restorecon", p("deck@192.168.1.50: Permission denied (publickey,password)."))
+        self.assertIn("IP address", p("ssh: Could not resolve hostname gaming-pc: Name or service not known"))
+        self.assertIn("password", p("something else"))
+
+    def test_wake_pc_resends_until_the_pc_answers(self):
+        clock, sends, polls = Clock(), [], []
+
+        def answers(host):
+            polls.append(clock.t)
+            return len(polls) > 10                      # awake after about 20 seconds
+
+        def sleep(seconds):
+            clock.t += seconds
+        self.assertTrue(couchlink.wake_pc("192.168.1.50", lambda: sends.append(clock.t), lambda line: None,
+                                          answers=answers, clock=clock, sleep=sleep))
+        self.assertEqual(len(sends), 2)                 # once, then again after 15 seconds
+
+    def test_wake_pc_gives_up(self):
+        clock, lines = Clock(), []
+        ok = couchlink.wake_pc("192.168.1.50", lambda: None, lines.append, answers=lambda host: False,
+                               clock=clock, sleep=lambda seconds: setattr(clock, "t", clock.t + seconds))
+        self.assertFalse(ok)
+        self.assertIn("didn't wake up", "\n".join(lines))
 
     def test_set_value_writes_a_list(self):
         new = couchlink.set_config_value('pc_addresses = []                    # REQUIRED\n', "pc_addresses", ["12:00"])

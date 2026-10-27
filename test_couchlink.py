@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 Adam M.
+# Copyright (C) 2026 blackhat840
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
 Offline tests for couchlink.py. No TV, Pi or PC needed: a simulated clock and
@@ -394,7 +394,7 @@ class FlowTests(unittest.TestCase):
         self.assertEqual(n("00:00"), "TV / built-in apps")
 
 
-# Adam's confirmed layout (from the scan and trace):
+# The tested layout (from the scan and trace):
 #   TV HDMI 1 (ARC) = soundbar 10:00; soundbar In 1 = streamer 11:00; In 2 = PC 12:00
 #   TV HDMI 4 = Pi 40:00
 REAL = dict(pc_addresses=["12:00"], pi_address="40:00", soundbar_address="10:00",

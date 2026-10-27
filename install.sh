@@ -1,5 +1,5 @@
 #!/bin/bash
-# Copyright (C) 2026 Adam M.
+# Copyright (C) 2026 blackhat840
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # Couchlink installer and updater for Raspberry Pi OS.

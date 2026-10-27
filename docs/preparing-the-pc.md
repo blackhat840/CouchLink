@@ -117,7 +117,7 @@ wake the PC. Bazzite ships these rules for the controllers it knows about.
 ## 5. Give the Pi a key the PC trusts
 
 The service on the Pi runs as root, so the key must belong to root on the Pi.
-`sudo couchlink --setup` on the Pi offers to do this for you. To do it by
+`sudo bash install.sh --setup` on the Pi offers to do this for you. To do it by
 hand, run these **on the Pi**:
 
 ```bash

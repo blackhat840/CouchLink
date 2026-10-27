@@ -265,6 +265,9 @@ if [ "$UPDATE" = 1 ]; then
     fi
     say "Updating CouchLink ${OLD_VER:-?} -> ${NEW_VER:-?}${RELEASE_TAG:+ (release $RELEASE_TAG)}"
 fi
+if [ -n "$RELEASE_TAG" ] && [ "${RELEASE_TAG#[vV]}" != "$NEW_VER" ]; then
+    warn "Release $RELEASE_TAG calls itself version ${NEW_VER:-?}. It was tagged before its version number was changed."
+fi
 
 # ---------------------------------------------------------------- python
 say "Checking Python"

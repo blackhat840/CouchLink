@@ -4,10 +4,10 @@
 |---|---|
 | [Installation](installation.md) | What you need, installing on the Pi, the dry run, going live and updating |
 | [Preparing the PC](preparing-the-pc.md) | SSH, the suspend rule and waking, on SteamOS and Bazzite |
-| [Configuration](configuration.md) | Finding your CEC addresses, the config file and every setting |
-| [Status page and logs](status-page-and-logs.md) | Following what CouchLink does |
+| [Configuration](configuration.md) | Guided setup, finding your CEC addresses, the config file and every setting |
+| [Status page and logs](status-page-and-logs.md) | Following what CouchLink does, the wake and sleep buttons, and the API |
 | [Troubleshooting](troubleshooting.md) | Common problems and known limitations |
-| [How it works](how-it-works.md) | The layout, the rule CouchLink enforces and the CEC messages it reads |
+| [How it works](how-it-works.md) | The layout, the rule CouchLink enforces, the CEC messages it reads, and remote sessions |
 | [Hardware and systems](hardware.md) | Supported PC systems and tested TVs and soundbars |
 | [Credits](credits.md) | Projects CouchLink builds on, related projects and trademarks |
 

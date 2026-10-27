@@ -922,6 +922,13 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("Your config needed no changes for the new version", out)
         self.assertFalse(os.path.exists(conf + ".bak"))
 
+    def test_update_warns_when_the_tag_and_version_differ(self):
+        version = couchlink.VERSION
+        code, out = self.install("--update", "--local", COUCHLINK_RELEASE_TAG=f"v{version}")
+        self.assertNotIn("calls itself version", out)
+        code, out = self.install("--update", "--local", COUCHLINK_RELEASE_TAG="v9.9")
+        self.assertIn(f"Release v9.9 calls itself version {version}", out)
+
     def test_failed_update_leaves_the_config_alone(self):
         conf = os.path.join(self.root, "etc/couchlink/config.toml")
         with open(conf, "w") as f:

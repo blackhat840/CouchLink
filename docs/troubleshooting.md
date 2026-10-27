@@ -8,7 +8,8 @@ Common problems, what to check, and the known limitations.
 |---|---|
 | The service exits straight away | Run `--check-config`. It lists every problem. |
 | `Unknown setting` errors | The installed script is older than your config, or the setting has a typo. Run the installer with `--update`, or run `sudo couchlink --migrate-config` to fix typos and old settings. |
-| `scan` shows no devices | CEC is off in the TV's settings, or the Pi was not connected to the TV at boot. Reboot with the TV connected. |
+| `scan` shows no devices, or `--setup-cec` says no CEC devices answered | CEC is off in the TV's settings, or the Pi was not connected to the TV at boot. Reboot with the TV connected. |
+| `--setup-cec` does not hear the switch to the PC | Your TV may not announce input changes. Type the input number when it asks. If the PC is already on screen, switch away first, then back. |
 | No input changes are logged | Turn on `raw_debug` and look at what your TV sends when you switch. Make sure `watch_routing_messages` is on. |
 | The PC never wakes | Test with `wakeonlan <mac>` from the Pi. Check the BIOS and OS wake settings. Try a subnet `wol_broadcast`. |
 | `SSH ended with 255`, then `Confirmed: the PC went to sleep` | Normal. The connection drops as the PC suspends. |
@@ -21,6 +22,11 @@ Common problems, what to check, and the known limitations.
 | The PC is suspended while you use it | Check the log for the input that was announced just before. If it came from the soundbar or another device, `ignore_announcements_from` or `guard_addresses` may help. |
 | The TV switches away after the PC wakes | Look for `RECOVER` lines. If they appear but the TV does not come back, your TV may ignore the Pi's Active Source messages. |
 | The TV is slow to switch to the PC after a controller wake | Look for `TV reports that it is on`. If the log shows `did not report that it is on` instead, your TV does not answer power queries while it starts. Lower `tv_boot_timeout`. |
+| The status page has no wake and sleep buttons | Make an API key with `sudo couchlink --new-api-key`, then `sudo systemctl restart couchlink`. |
+| The buttons say `Wrong API key` | The page asks for the key again. If you lost it, make a new one with `sudo couchlink --new-api-key`. |
+| The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
+| The TV turns on when you wake the PC to stream | The PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. |
+| The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. |
 | Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 644 <file> /etc/couchlink/config.toml`. |
 
 ## Known limitations
@@ -45,9 +51,14 @@ Common problems, what to check, and the known limitations.
   power-off. Wired Ethernet is much more reliable.
 - **Remote buttons only reach the Pi** if the TV sends them to it. That
   depends on the TV accepting the Pi as the active source.
+- **Only CouchLink can start a remote session.** Waking the PC any other way,
+  such as with Moonlight's own Wake-on-LAN, looks the same as a controller
+  wake, so the TV turns on.
 - **Security.** The Pi holds an SSH key that can log in to the PC. The sudoers
-  rule limits it to the suspend command. Keep the Pi and the status page on a
-  trusted network.
+  rule limits it to the suspend command. The wake and sleep actions need the
+  API key, but the read-only status page has no login, and CouchLink serves
+  plain HTTP. Keep the Pi on a trusted network, and use a VPN to reach it from
+  outside the home.
 
 ---
 

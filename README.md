@@ -668,6 +668,7 @@ login, so keep the page on a trusted network.
 | `install.sh` | Installer and updater |
 | `test_couchlink.py` | Offline tests. Run with `python3 test_couchlink.py` |
 | `README.md` | This file |
+| `CONTRIBUTING.md` | Rules for changes to this repository |
 | `docs/dashboard.png` | Screenshot of the status page |
 
 What gets installed on the Pi:

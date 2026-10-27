@@ -11,8 +11,10 @@ every 2 seconds.
 
 It shows:
 
-- The PC's name and state (online, waking up, going to sleep, asleep), and the
-  path from the TV to the PC. The name comes from `pc_name`, or from the PC's
+- The PC's name and state (online, waking up, going to sleep, asleep, off,
+  restarting), and the path from the TV to the PC. See
+  [Sleep, power-off and restarts](how-it-works.md#sleep-power-off-and-restarts)
+  for how CouchLink tells them apart. The name comes from `pc_name`, or from the PC's
   own hostname if that is not set.
 - TV power and input, whether the PC answers on the network, Wake-on-LAN and
   suspend attempts, the input guard, the sleep check and uptime.

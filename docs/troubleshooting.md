@@ -17,6 +17,7 @@ Common problems, what to check, and the known limitations.
 | `Connection refused` or timeouts on SSH | sshd is not running, or the firewall blocks it. On Bazzite, allow the `ssh` service in firewalld. |
 | SSH asks for a password even after `ssh-copy-id` | On Bazzite, run `restorecon -Rv ~/.ssh` on the PC. Also check `ssh_user` matches your account. |
 | Suspend stops working after a SteamOS update | Check that `/etc/sudoers.d/zzz-cec-suspend` and sshd survived the update. |
+| The status page says "Asleep or off" | CouchLink can't open its SSH session to the PC. Check that `sudo ssh <user>@<pc-ip> "echo ok"` works on the Pi, and look for `Can't watch the PC's power state` in the log. |
 | The PC is suspended while you use it | Check the log for the input that was announced just before. If it came from the soundbar or another device, `ignore_announcements_from` or `guard_addresses` may help. |
 | The TV switches away after the PC wakes | Look for `RECOVER` lines. If they appear but the TV does not come back, your TV may ignore the Pi's Active Source messages. |
 | The TV is slow to switch to the PC after a controller wake | Look for `TV reports that it is on`. If the log shows `did not report that it is on` instead, your TV does not answer power queries while it starts. Lower `tv_boot_timeout`. |
@@ -36,9 +37,10 @@ Common problems, what to check, and the known limitations.
 - **The Pi's own input is never kept while the PC is awake.** If the TV
   switches to the Pi's input while the PC is on screen, CouchLink switches it
   back. To look at the Pi's own screen, stop `couchlink.service` first.
-- **A PC restart looks like going to sleep.** If the PC is offline for longer
-  than `pc_sleep_confirm`, the `on_pc_sleep` action runs. When the PC comes
-  back, the TV switches back to it.
+- **A restart can look like a power-off on older systemd.** CouchLink only
+  knows a shutdown is a restart if the PC says so. If it doesn't, and the PC is
+  offline for longer than `pc_sleep_confirm`, the `on_pc_sleep` action runs.
+  When the PC comes back, the TV switches back to it.
 - **Wake-on-LAN over Wi-Fi is hit and miss**, and never works from
   power-off. Wired Ethernet is much more reliable.
 - **Remote buttons only reach the Pi** if the TV sends them to it. That

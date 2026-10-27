@@ -70,6 +70,33 @@ CouchLink learns which input is active from these messages:
 
 Different TVs use different messages, so CouchLink watches all of them.
 
+## Sleep, power-off and restarts
+
+A PC that is asleep, turned off or restarting looks the same from the network:
+it stops answering ping. To tell them apart, CouchLink keeps one SSH session
+open to the PC while it is on (`watch_pc_power`). Nothing is installed on the
+PC.
+
+The session runs `gdbus monitor` on the PC, which comes with SteamOS and
+Bazzite. It reports the announcements the PC makes just before it changes
+state:
+
+| The PC announces | Status page shows |
+|---|---|
+| Going to sleep | Asleep |
+| Shutting down | Off |
+| Restarting | Restarting |
+
+Recent versions of systemd say whether a shutdown is a restart or a power-off.
+On older ones, a restart shows as Off until the PC comes back.
+
+If `gdbus` is missing, the session still helps. Shutting down closes it, while
+sleep only freezes it. If CouchLink can't open the session at all, for example
+because the SSH key isn't set up yet, the status page shows "Asleep or off".
+
+While the PC is restarting, the `on_pc_sleep` action does not run. If a
+restart takes longer than 5 minutes, CouchLink treats the PC as off.
+
 ---
 
 Back to the [Documentation](README.md) or the [README](../README.md).

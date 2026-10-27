@@ -280,6 +280,7 @@ fi
 
 # ---------------------------------------------------------------- update pre-check
 MIGRATED=""
+CONFIG_UPDATED=0
 if [ "$UPDATE" = 1 ]; then
     say "Checking your config against the new version"
     CHECKED="$CONF"
@@ -311,6 +312,7 @@ if [ -n "$MIGRATED" ] && ! cmp -s "$MIGRATED" "$CONF"; then
     cp "$CONF" "$CONF.bak"
     install -m 0644 "$MIGRATED" "$CONF"
     echo "Brought $CONF up to date (the previous version is in $CONF.bak)"
+    CONFIG_UPDATED=1
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
 elif [ -f "$CONF" ]; then
     echo "Kept your existing $CONF"
@@ -470,9 +472,13 @@ if [ "$UPDATE" = 1 ]; then
         echo "couchlink.service isn't running, so there's nothing to restart."
         echo "The new version is used the next time it starts (service or foreground)."
     fi
-    say "Updated ${OLD_VER:-?} -> ${NEW_VER:-?}. Your config was kept."
-    echo "To see settings added in the new version:"
-    echo "  diff /etc/couchlink/config.toml /etc/couchlink/config.example.toml"
+    say "Updated ${OLD_VER:-?} -> ${NEW_VER:-?}. Your settings were kept."
+    if [ "$CONFIG_UPDATED" = 1 ]; then
+        echo "Your config was brought up to date for the new version. To see what changed:"
+        echo "  diff /etc/couchlink/config.toml.bak /etc/couchlink/config.toml"
+    else
+        echo "Your config needed no changes for the new version."
+    fi
     if [ "$REBOOT_NEEDED" = 1 ]; then
         warn "Reboot needed for the USB keyboard gadget: sudo reboot"
     fi

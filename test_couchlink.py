@@ -853,10 +853,26 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("Renamed pc_adresses to pc_addresses", out)
         self.assertIn("Brought", out)
+        self.assertIn("Your config was brought up to date for the new version", out)
+        self.assertNotIn("config.example.toml\n", out.split("Updated")[-1])
         with open(conf + ".bak") as f:
             self.assertEqual(f.read(), OLD_CONFIG)
         with open(conf) as f:
             self.assertIn("watch_pc_power = true", f.read())
+
+    def test_update_says_when_the_config_needed_no_changes(self):
+        conf = os.path.join(self.root, "etc/couchlink/config.toml")
+        shutil.copy(os.path.join(HERE, "couchlink.example.toml"), conf)
+        for key, value in (("pc_host", "192.168.1.50"), ("pc_mac", "aa:bb:cc:dd:ee:01"),
+                           ("pi_address", "40:00")):
+            with open(conf) as f:
+                text = couchlink.set_config_value(f.read(), key, value)
+            with open(conf, "w") as f:
+                f.write(text.replace("pc_addresses = []", 'pc_addresses = ["12:00"]'))
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Your config needed no changes for the new version", out)
+        self.assertFalse(os.path.exists(conf + ".bak"))
 
     def test_failed_update_leaves_the_config_alone(self):
         conf = os.path.join(self.root, "etc/couchlink/config.toml")

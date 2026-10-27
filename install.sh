@@ -8,7 +8,15 @@
 #
 #     sudo bash install.sh              # first install
 #     sudo bash install.sh --with-hid   # first install + USB keyboard for remote buttons
-#     sudo bash install.sh --update     # update an existing install
+#     sudo bash install.sh --update     # update to the latest release on GitHub
+#
+# More update options:
+#
+#     --update --release v2.2    install that release
+#     --update --release         list the releases and ask which one to install
+#     --list-releases            list the releases
+#     --update --local           install the files next to this script instead
+#                                (after git pull, or files copied by hand)
 #
 # First install:
 #   1. Installs cec-utils and ping
@@ -19,42 +27,184 @@
 #   6. With --with-hid: enables USB gadget mode and a keyboard gadget service
 #      (takes effect after a reboot)
 #
-# --update skips the package step, runs the tests, checks your existing config
-# against the new version BEFORE replacing anything, installs it, and restarts
-# the service if it's running. If the tests or the config check fail, the
-# installed version is left untouched.
+# --update downloads the release into a temporary folder and runs that
+# release's installer. It skips the package step, runs the tests, checks your
+# existing config against the new version BEFORE replacing anything, installs
+# it, and restarts the service if it's running. If the tests or the config
+# check fail, the installed version is left untouched. Installing a release
+# older than the installed version asks you to confirm.
 set -euo pipefail
 
 ROOT="${ROOT:-}"                 # for testing only: install into a fake root
 TEST_MODE="${INSTALL_TEST:-0}"   # for testing only: skip apt, systemctl
 WITH_HID=0
 UPDATE=0
-for arg in "$@"; do
-    case "$arg" in
+LOCAL=0
+LIST=0
+PICK=0
+RELEASE=""
+ALL_ARGS="$*"
+while [ $# -gt 0 ]; do
+    case "$1" in
         --with-hid) WITH_HID=1 ;;
         --update) UPDATE=1 ;;
-        -h|--help) sed -n '5,26p' "$0"; exit 0 ;;
-        *) echo "Unknown option: $arg"; exit 1 ;;
+        --local) LOCAL=1 ;;
+        --list-releases) LIST=1 ;;
+        --release)
+            UPDATE=1
+            if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then RELEASE="$2"; shift; else PICK=1; fi ;;
+        --release=*) UPDATE=1; RELEASE="${1#*=}" ;;
+        -h|--help) awk 'NR > 2 && /^#/ { sub(/^# ?/, ""); print; next } NR > 2 { exit }' "$0"; exit 0 ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
     esac
+    shift
 done
+# Set when a newer installer runs this one from a downloaded release.
+[ -z "${COUCHLINK_RELEASE_TAG:-}" ] || LOCAL=1
 
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33mWARNING: %s\033[0m\n' "$*"; }
 die()  { printf '\033[31mERROR: %s\033[0m\n' "$*"; exit 1; }
 run()  { if [ "$TEST_MODE" = 1 ]; then echo "[test mode] skipped: $*"; else "$@"; fi; }
 version_of() { sed -n 's/^VERSION = "\(.*\)"/\1/p' "$1" 2>/dev/null | head -1; }
+have_tty() { (exec </dev/tty) 2>/dev/null; }
+
+# Talks to GitHub with Python's standard library, so nothing extra is needed.
+# COUCHLINK_API and COUCHLINK_ARCHIVE are for testing only.
+release_tool() {
+    python3 - "$@" <<'PYREL'
+import json, os, re, sys, tarfile, tempfile, urllib.error, urllib.request
+
+REPO = os.environ.get("COUCHLINK_REPO", "blackhat840/CouchLink")
+API = os.environ.get("COUCHLINK_API", f"https://api.github.com/repos/{REPO}")
+ARCHIVE = os.environ.get("COUCHLINK_ARCHIVE", f"https://github.com/{REPO}/archive/refs/tags/{{tag}}.tar.gz")
+
+
+def fail(message):
+    print(f"ERROR: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def get(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "couchlink-installer",
+                                               "Accept": "application/vnd.github+json"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return r.read()
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            fail(f"Not found on GitHub: {url}")
+        fail(f"GitHub answered {e.code} for {url}")
+    except (urllib.error.URLError, OSError) as e:
+        fail(f"Could not reach GitHub ({getattr(e, 'reason', e)}). Check the Pi's network")
+
+
+def version_key(v):
+    return [(0, int(x), "") if x.isdigit() else (1, 0, x) for x in re.split(r"[.-]", v.lstrip("vV"))]
+
+
+cmd, args = sys.argv[1], sys.argv[2:]
+if cmd == "list":
+    for r in json.loads(get(f"{API}/releases?per_page=30")):
+        if not r.get("draft"):
+            print("\t".join([r["tag_name"], (r.get("published_at") or "")[:10],
+                             r.get("name") or "", "pre-release" if r.get("prerelease") else ""]))
+elif cmd == "latest":
+    print(json.loads(get(f"{API}/releases/latest"))["tag_name"])
+elif cmd == "cmp":
+    a, b = version_key(args[0]), version_key(args[1])
+    print((a > b) - (a < b))
+elif cmd == "fetch":
+    tag, dest = args
+    if not re.fullmatch(r"[A-Za-z0-9._-]+", tag):
+        fail(f"{tag!r} is not a valid release name")
+    data = get(ARCHIVE.format(tag=tag))
+    with tempfile.TemporaryFile() as f:
+        f.write(data)
+        f.seek(0)
+        with tarfile.open(fileobj=f, mode="r:gz") as tf:
+            for m in tf.getmembers():
+                parts = m.name.split("/")
+                if m.name.startswith("/") or ".." in parts or not (m.isfile() or m.isdir()):
+                    fail(f"Unsafe entry in the release archive: {m.name}")
+            if hasattr(tarfile, "data_filter"):
+                tf.extractall(dest, filter="data")
+            else:
+                tf.extractall(dest)
+    for name in sorted(os.listdir(dest)):
+        if os.path.isfile(os.path.join(dest, name, "install.sh")):
+            print(os.path.join(dest, name))
+            break
+    else:
+        fail("The release archive has no install.sh")
+PYREL
+}
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-[ "$TEST_MODE" = 1 ] || [ "$(id -u)" = 0 ] || die "Run with sudo: sudo bash $0 $*"
-[ -f "$HERE/couchlink.py" ] || die "couchlink.py not found next to this script"
-[ -f "$HERE/couchlink.example.toml" ] || die "couchlink.example.toml not found next to this script"
+[ "$TEST_MODE" = 1 ] || [ "$(id -u)" = 0 ] || [ "$LIST" = 1 ] || die "Run with sudo: sudo bash $0 $ALL_ARGS"
 
 BIN="$ROOT/usr/local/bin/couchlink"
 CONF_DIR="$ROOT/etc/couchlink"
 CONF="$CONF_DIR/config.toml"
 UNIT_DIR="$ROOT/etc/systemd/system"
-NEW_VER="$(version_of "$HERE/couchlink.py")"
 OLD_VER=""
+
+# ---------------------------------------------------------------- releases on GitHub
+if [ "$LIST" = 1 ]; then
+    OUT="$(release_tool list)" || exit 1
+    [ -n "$OUT" ] || die "No releases found"
+    say "Couchlink releases (newest first)"
+    printf '%s\n' "$OUT" | while IFS=$'\t' read -r tag date name pre; do
+        printf '  %-10s %s  %s %s\n' "$tag" "$date" "$name" "$pre"
+    done
+    exit 0
+fi
+
+if [ "$UPDATE" = 1 ] && [ "$LOCAL" = 0 ]; then
+    [ -f "$BIN" ] && [ -f "$CONF" ] || die "No existing install found. Run without --update first."
+    OLD_VER="$(version_of "$BIN")"
+    LATEST=0
+    if [ "$PICK" = 1 ]; then
+        have_tty || die "No terminal to choose from. Use --release <name> (see --list-releases)."
+        OUT="$(release_tool list)" || exit 1
+        [ -n "$OUT" ] || die "No releases found"
+        mapfile -t TAGS < <(printf '%s\n' "$OUT" | cut -f1)
+        say "Couchlink releases (installed: ${OLD_VER:-unknown})"
+        i=1
+        printf '%s\n' "$OUT" | while IFS=$'\t' read -r tag date name pre; do
+            printf '  %2d) %-10s %s  %s %s\n' "$i" "$tag" "$date" "$name" "$pre"
+            i=$((i + 1))
+        done
+        read -r -p "Release to install (1-${#TAGS[@]}): " n </dev/tty
+        [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le "${#TAGS[@]}" ] || die "No release chosen"
+        RELEASE="${TAGS[$((n - 1))]}"
+    elif [ -z "$RELEASE" ]; then
+        RELEASE="$(release_tool latest)" || exit 1
+        LATEST=1
+    fi
+    CMP="$(release_tool cmp "$RELEASE" "${OLD_VER:-0}")"
+    if [ "$CMP" = 0 ] && [ "$LATEST" = 1 ]; then
+        say "Couchlink ${OLD_VER} is already the latest release ($RELEASE). Nothing to do."
+        exit 0
+    fi
+    if [ "$CMP" = -1 ]; then
+        have_tty || die "$RELEASE is older than the installed ${OLD_VER}. Run from a terminal to confirm."
+        read -r -p "$RELEASE is older than the installed ${OLD_VER}. Install it anyway? [y/N] " a </dev/tty
+        [ "$a" = y ] || [ "$a" = Y ] || die "Cancelled. Nothing was changed."
+    fi
+    TMP="$(mktemp -d)"
+    trap 'rm -rf "$TMP"' EXIT
+    say "Downloading Couchlink $RELEASE from GitHub"
+    SRC="$(release_tool fetch "$RELEASE" "$TMP")" || exit 1
+    ARGS=(--update)
+    [ "$WITH_HID" = 0 ] || ARGS+=(--with-hid)
+    COUCHLINK_RELEASE_TAG="$RELEASE" bash "$SRC/install.sh" "${ARGS[@]}"
+    exit 0
+fi
+
+[ -f "$HERE/couchlink.py" ] || die "couchlink.py not found next to this script"
+[ -f "$HERE/couchlink.example.toml" ] || die "couchlink.example.toml not found next to this script"
+NEW_VER="$(version_of "$HERE/couchlink.py")"
 
 if [ "$UPDATE" = 1 ]; then
     [ -f "$BIN" ] && [ -f "$CONF" ] || die "No existing install found. Run without --update first."
@@ -62,7 +212,7 @@ if [ "$UPDATE" = 1 ]; then
     if [ "$TEST_MODE" != 1 ]; then
         command -v cec-client >/dev/null || die "cec-client is missing. Run without --update to reinstall packages."
     fi
-    say "Updating Couchlink ${OLD_VER:-?} -> ${NEW_VER:-?}"
+    say "Updating Couchlink ${OLD_VER:-?} -> ${NEW_VER:-?}${COUCHLINK_RELEASE_TAG:+ (release $COUCHLINK_RELEASE_TAG)}"
 fi
 
 # ---------------------------------------------------------------- python
@@ -305,7 +455,7 @@ cat <<STEPS
 5. Go live:
      sudo systemctl enable --now couchlink.service
      sudo journalctl -u couchlink.service -f
-6. Later updates: copy or pull the new files here and run
+6. Later updates (installs the latest release from GitHub):
      sudo bash install.sh --update
 STEPS
 if [ "$REBOOT_NEEDED" = 1 ]; then

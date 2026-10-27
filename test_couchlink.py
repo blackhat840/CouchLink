@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 blackhat840
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
 Offline tests for couchlink.py. No TV, Pi or PC needed: a simulated clock and

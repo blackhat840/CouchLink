@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# Copyright (C) 2026 blackhat840
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
 Couchlink 2.2

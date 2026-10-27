@@ -66,7 +66,8 @@ On the Pi, in the folder that holds `install.sh`:
 sudo bash install.sh --update
 ```
 
-This installs the latest release from GitHub and keeps your config. See
+This installs the latest release from GitHub, keeps your settings and brings
+your config up to date. See
 [Updating](docs/installation.md#updating) for the other options.
 
 ## Documentation

@@ -66,6 +66,30 @@ set up the SSH key (step 5 of [Preparing the PC](preparing-the-pc.md)). It
 keeps the comments in the file and saves the previous version as
 `config.toml.bak`.
 
+### Updating an older config
+
+`install.sh --update` brings your config up to date by itself. To do it by
+hand, or to see what would change first:
+
+```bash
+sudo couchlink --migrate-config --dry-run   # only show the changes
+sudo couchlink --migrate-config             # make them
+```
+
+It explains every change it makes:
+
+- Settings added in newer versions are added, with their default values and
+  comments, in the right section.
+- A setting name with a typo is fixed, for example `pc_adress` becomes
+  `pc_addresses`.
+- Settings that were renamed get their new name. Settings that CouchLink does
+  not know, or that were removed, are commented out, never deleted.
+- A true, false or number written in quotes is fixed, for example `"false"`
+  becomes `false`.
+
+Things only you can fill in, such as the CEC addresses, are listed at the end.
+The previous version of the file is saved as `config.toml.bak`.
+
 ### Editing the file
 
 The CEC addresses, and any other setting, go in the file itself. It belongs

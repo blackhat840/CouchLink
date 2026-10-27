@@ -132,7 +132,8 @@ An update does the following, in order:
 1. Downloads the release into a temporary folder and runs its installer.
 2. Skips the package step.
 3. Runs the offline tests.
-4. Checks your existing config against the new version.
+4. Brings a copy of your config up to date for the new version and checks
+   it. See [Updating an older config](configuration.md#updating-an-older-config).
 5. Installs the new script.
 6. Restarts the service if it is running.
 
@@ -147,8 +148,10 @@ Releases are downloaded from GitHub over HTTPS. They are not signed.
 `--update` installs the files next to it. Run `git pull` once to get the new
 installer.
 
-Your config is never overwritten. The newest example is saved next to it, so
-you can see what a new version added:
+Your settings are always kept. If the new version adds or changes settings,
+your config is brought up to date and the previous version is saved as
+`config.toml.bak`. The newest example is saved next to it, so you can see
+what a new version added:
 
 ```bash
 diff /etc/couchlink/config.toml /etc/couchlink/config.example.toml

@@ -112,6 +112,18 @@ To stop it:
 sudo systemctl disable --now couchlink.service
 ```
 
+## Changing settings later
+
+| Command | What it does |
+|---|---|
+| `sudo bash install.sh --setup` | Asks for the settings again, all but the CEC addresses. Press Enter to keep a value. |
+| `sudo bash install.sh --setup-cec` | Finds the CEC addresses again, for example after moving a cable |
+| `sudo couchlink --new-api-key` | Generates a new key for the wake and sleep buttons and the API |
+| `sudo nano /etc/couchlink/config.toml` | Edits any setting by hand. See [Configuration](configuration.md). |
+
+Restart CouchLink after a change: `sudo systemctl restart couchlink`.
+`--setup-cec` stops and starts it by itself.
+
 ## Updating
 
 Log in to the Pi and run this in the folder that holds `install.sh`. If you

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-CouchLink 2.5.2
+CouchLink 2.6
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -13,6 +13,10 @@ with the TV:
 and the other way round: if the PC wakes by itself (controller, power button)
 the TV turns on and switches to it, and if the PC goes to sleep by itself the
 TV can switch to another input.
+
+A remote session keeps the PC awake without the TV, for streaming. The status
+page and its API (POST /api/..., with an API key) can wake the PC, with or
+without the TV, and put it to sleep. --setup and --setup-cec fill in the config.
 
 Design notes:
   * One controller thread owns all state. The CEC reader, the pinger and the
@@ -52,7 +56,7 @@ except ModuleNotFoundError:          # Python < 3.11
     except ModuleNotFoundError:
         tomllib = None
 
-VERSION = "2.5.2"
+VERSION = "2.6"
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 EX_CONFIG = 78
 
@@ -251,7 +255,7 @@ def validate(settings):
             problems.append(f"{key} {s[key]} is also listed in pc_addresses. If the PC is "
                             "behind the soundbar, leave soundbar_address unset")
     if s["api_key_hash"] and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(s["api_key_hash"])):
-        problems.append("api_key_hash is not valid. Make a new key with: sudo couchlink --new-api-key")
+        problems.append("api_key_hash is not valid. Generate a new key with: sudo couchlink --new-api-key")
     if not isinstance(s["watch_pc_power"], bool):
         problems.append("watch_pc_power must be true or false")
     if s["select_soundbar_audio"] and not s["soundbar_pc_audio_address"]:
@@ -1854,7 +1858,7 @@ footer a { color: var(--muted); }
     if (Date.now() < noteUntil) return;
     if (!allowed) {
       if (!$("ctlNote").querySelector("code")) {
-        $("ctlNote").innerHTML = "Wake and sleep buttons are off. Turn them on by making an API key: <code>sudo couchlink --new-api-key</code>";
+        $("ctlNote").innerHTML = "Wake and sleep buttons are off. Turn them on by generating an API key: <code>sudo couchlink --new-api-key</code>";
       }
     } else if (!hasKey) {
       note("Enter the API key to use the wake and sleep buttons here.");
@@ -2071,7 +2075,7 @@ def start_dashboard(port, controller, events=None):
             stored = controller.cfg.api_key_hash
             if not stored or events is None:
                 return self.answer(403, False, "actions_off",
-                                   "Actions are off. Make an API key with: sudo couchlink --new-api-key")
+                                   "Actions are off. Generate an API key with: sudo couchlink --new-api-key")
             if guard.locked(source):
                 return self.answer(429, False, "locked_out", "Too many wrong API keys. Try again in a minute")
             key = bearer_key(self.headers)
@@ -2174,13 +2178,13 @@ def show_api_key(key, path, out):
     out(f"New API key: {key}")
     out("")
     out(f"Copy it now. Only a hash of it is saved in {path}, so it can't be shown again.")
-    out("Making another key replaces it, and the old one stops working.")
+    out("Generating another key replaces it, and the old one stops working.")
     out("The status page asks for it once on each device. Scripts send it as:")
     out("  Authorization: Bearer <key>")
 
 
 def new_api_key(path, out=print):
-    """Make a new API key, save its hash to the config and show the key once."""
+    """Generate a new API key, save its hash to the config and show the key once."""
     try:
         with open(path) as f:
             text = f.read()
@@ -2309,8 +2313,8 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
     out("")
     out("The status page can have wake and sleep buttons, with an API for scripts and Home")
     out("Assistant. They need an API key.")
-    question = ("An API key already exists. Make a new one? The old one stops working. (y/n)"
-                if current.get("api_key_hash") else "Make an API key now? (y/n)")
+    question = ("An API key already exists. Generate a new one? The old one stops working. (y/n)"
+                if current.get("api_key_hash") else "Generate an API key now? (y/n)")
     api_key = None
     if prompt(question, "n", lambda a: a.lower() in ("y", "n"), "Enter y or n.").lower() == "y":
         api_key = secrets.token_urlsafe(24)
@@ -2774,7 +2778,7 @@ def main(argv=None):
     ap.add_argument("--setup-cec", action="store_true",
                     help="find the CEC addresses with the TV on and save them")
     ap.add_argument("--new-api-key", action="store_true",
-                    help="make a key for the wake and sleep buttons and API, replacing any old one")
+                    help="generate a key for the wake and sleep buttons and API, replacing any old one")
     args = ap.parse_args(argv)
     if args.new_api_key:
         sys.exit(new_api_key(args.config))

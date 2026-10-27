@@ -93,7 +93,7 @@ sudo bash install.sh --setup
 - a name for the PC on the status page
 - what to do when the PC wakes by itself, for example from a controller
 - what to do when the PC goes to sleep by itself
-- whether to make an [API key](status-page-and-logs.md#wake-and-sleep-buttons)
+- whether to generate an [API key](status-page-and-logs.md#wake-and-sleep-buttons)
   for the wake and sleep buttons
 
 Then it offers to set up the SSH key (step 5 of

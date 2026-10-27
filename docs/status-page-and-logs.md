@@ -41,7 +41,7 @@ login, so keep the page on a trusted network.
 ## Wake and sleep buttons
 
 The status page can wake the PC and put it to sleep. The buttons and the API
-behind them need an API key, and are off until you make one:
+behind them need an API key, and are off until you generate one:
 
 ```bash
 sudo couchlink --new-api-key
@@ -50,7 +50,7 @@ sudo systemctl restart couchlink
 
 It prints the key once. Copy it somewhere safe, such as a password manager.
 Only a hash of the key is saved in the config, so it can't be shown again.
-Running the command again makes a new key, and the old one stops working.
+Running the command again generates a new key, and the old one stops working.
 
 The status page asks for the key once on each phone or computer and
 remembers it there. "Forget the key on this device" removes it.
@@ -102,7 +102,7 @@ Each answer is JSON, such as:
 | `too_soon` | HTTP 429. Only one wake, and one sleep, is accepted every 10 seconds |
 | `bad_key` | HTTP 401. The key is missing or wrong |
 | `locked_out` | HTTP 429. 5 wrong keys from one address lock it out for a minute |
-| `actions_off` | HTTP 403. No API key has been made yet |
+| `actions_off` | HTTP 403. No API key has been generated yet |
 | `refused` | HTTP 403. The request came from a page on another web site |
 
 `GET /api` only reads, and needs no key. Every request is logged with the

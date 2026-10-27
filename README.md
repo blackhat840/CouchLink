@@ -18,9 +18,15 @@ is installed on the PC.
   from a controller. It turns the TV on first if needed.
 - **Handles Sleep from the Steam menu.** CouchLink can switch the TV to another
   input, turn it off, or leave it alone.
+- **Remote play.** Wake the PC from the status page and keep it awake without
+  the TV, for streaming to a Steam Deck or phone with Steam Link or Moonlight.
+- **Wake and sleep buttons** on the status page, and an API with a key for
+  scripts, phone shortcuts and Home Assistant.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
 - **Optional:** forwards TV remote buttons to the PC as a USB keyboard.
+- **Guided setup:** the installer asks for your settings and finds the CEC
+  addresses with you.
 - **Safe to try:** a dry run that changes nothing, a status page, and offline
   tests.
 

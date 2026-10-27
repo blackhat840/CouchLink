@@ -145,6 +145,7 @@ seconds.
 | `on_pc_sleep` | `"nothing"` | When the PC goes to sleep by itself while on screen: `"switch"` changes to `pc_sleep_switch_to`, `"standby"` turns the TV off, `"nothing"` leaves the TV alone. |
 | `pc_sleep_switch_to` | unset | The input to change to with `on_pc_sleep = "switch"`. |
 | `select_soundbar_audio` | `false` | Experimental. Asks the soundbar to switch to `soundbar_pc_audio_address` when the PC comes on. |
+| `watch_pc_power` | `true` | Keep an SSH session open to the PC to hear whether it is going to sleep, restarting or shutting down. Shows the right state on the status page and stops a restart from counting as sleep. See [How it works](how-it-works.md#sleep-power-off-and-restarts). |
 | `verify_non_tv_standby` | `true` | When a device other than the TV sends standby (soundbars often do), ask the TV whether it is really off before acting. |
 | `watch_routing_messages` | `true` | Use Routing Change and Routing Information messages. Needed for many TVs. |
 | `hid_passthrough` | `true` | Forward TV remote buttons to the PC as a USB keyboard. Needs the `--with-hid` install. |

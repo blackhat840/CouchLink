@@ -997,6 +997,108 @@ class DocsTests(unittest.TestCase):
                     self.assertIn(anchor, anchors(full), f"{page}: no heading for {target}")
 
 
+class PcPowerTests(unittest.TestCase):
+    """Telling sleep, power-off and restarts apart, from what the PC announces."""
+
+    def on_screen(self, **overrides):
+        s = Sim(**dict(REAL, **overrides))
+        s.pc(True)
+        s.ev(("pc_power", "link_up"))
+        s.ev(msg("5f:81:12:00"))                        # PC on screen
+        s.run(30)
+        return s
+
+    def power(self, s):
+        return s.ctl.snapshot()["pc_power"]
+
+    def test_parse_gdbus_lines(self):
+        p = couchlink.parse_power_line
+        base = "/org/freedesktop/login1: org.freedesktop.login1.Manager."
+        self.assertEqual(p(base + "PrepareForSleep (true,)"), "sleep")
+        self.assertEqual(p(base + "PrepareForSleep (false,)"), "resume")
+        self.assertEqual(p(base + "PrepareForShutdown (true,)"), "shutdown")
+        self.assertEqual(p(base + "PrepareForShutdownWithMetadata (true, {'type': <'reboot'>})"), "reboot")
+        self.assertEqual(p(base + "PrepareForShutdownWithMetadata (true, {'type': <'poweroff'>})"), "poweroff")
+        self.assertIsNone(p("Monitoring signals from all objects owned by org.freedesktop.login1"))
+
+    def test_session_end(self):
+        self.assertEqual(couchlink.power_link_end("Timeout, server 192.168.1.50 not responding."), "lost")
+        self.assertEqual(couchlink.power_link_end("Connection to 192.168.1.50 closed by remote host."), "closed")
+
+    def test_sleep_shows_asleep(self):
+        s = self.on_screen()
+        s.ev(("pc_power", "sleep"))
+        s.pc(False)
+        self.assertEqual(self.power(s), "asleep")
+
+    def test_poweroff_shows_off_and_runs_on_pc_sleep(self):
+        s = self.on_screen()
+        s.ev(("pc_power", "poweroff"))
+        s.ev(("pc_power", "shutdown"))                  # the plain signal that follows
+        s.ev(("pc_power", "link_closed"))
+        s.pc(False)
+        self.assertEqual(self.power(s), "off")
+        s.run(15)
+        self.assertIn("tx 1F:82:11:00", s.act.cec)      # on_pc_sleep = "switch" still runs
+
+    def test_session_closing_means_off(self):
+        s = self.on_screen()
+        s.ev(("pc_power", "link_closed"))               # no announcement, gdbus missing
+        s.pc(False)
+        self.assertEqual(self.power(s), "off")
+
+    def test_session_freezing_means_asleep(self):
+        s = self.on_screen()
+        s.pc(False)
+        self.assertEqual(self.power(s), "asleep")
+        s.run(15)
+        s.ev(("pc_power", "link_lost"))
+        self.assertEqual(self.power(s), "asleep")
+
+    def test_restart_is_not_treated_as_sleep(self):
+        s = self.on_screen()
+        s.ev(("pc_power", "reboot"))
+        s.ev(("pc_power", "shutdown"))
+        s.ev(("pc_power", "link_closed"))
+        s.pc(False)
+        self.assertEqual(self.power(s), "restarting")
+        s.run(60)
+        self.assertNotIn("tx 1F:82:11:00", s.act.cec)   # TV left alone
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        s.pc(True)
+        s.run(30)
+        self.assertEqual(self.power(s), "on")
+        self.assertEqual(s.act.suspends, 0)
+
+    def test_restart_that_never_comes_back_shows_off(self):
+        s = self.on_screen()
+        s.ev(("pc_power", "reboot"))
+        s.pc(False)
+        s.run(301)
+        self.assertEqual(self.power(s), "off")
+
+    def test_no_information_shows_unknown(self):
+        s = Sim(**REAL)                                 # no watcher session, e.g. no SSH key yet
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(30)
+        s.pc(False)
+        self.assertEqual(self.power(s), "unknown")
+
+    def test_our_suspend_shows_asleep(self):
+        s = Sim(**REAL)
+        s.pc(True)
+        s.ev(msg("5f:81:11:00"))                        # TV elsewhere
+        s.run(10)
+        self.assertEqual(s.act.suspends, 1)
+        s.pc(False)
+        self.assertEqual(self.power(s), "asleep")
+
+    def test_setting_validated(self):
+        _, problems = couchlink.validate(dict(BASE, watch_pc_power="yes"))
+        self.assertTrue(any("watch_pc_power" in p for p in problems))
+
+
 class PcNameTests(unittest.TestCase):
     def test_name_looked_up_once_pc_is_reachable(self):
         s = Sim()

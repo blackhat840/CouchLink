@@ -81,6 +81,7 @@ DEFAULTS = {
     "on_pc_sleep": "nothing",           # PC went to sleep while on screen: "switch" | "standby" | "nothing"
     "pc_sleep_switch_to": None,         # with "switch": the input to change to, e.g. "11:00"
     "verify_non_tv_standby": True,
+    "watch_pc_power": True,             # keep an SSH session open to hear if the PC sleeps, restarts or shuts down
     "watch_routing_messages": True,
     "hid_passthrough": True,
     "hidg_device": "/dev/hidg0",
@@ -127,6 +128,7 @@ LOGICAL_NAMES = {
 ANNOUNCE_OPCODES = {"82": "Active Source", "86": "Set Stream Path",
                     "80": "Routing Change", "81": "Routing Information"}
 POWER_STATUS = {"00": "on", "01": "standby", "02": "turning on", "03": "turning off"}
+PC_ANNOUNCED = {"sleep": "asleep", "reboot": "restarting", "poweroff": "off", "shutdown": "off"}
 TV_BOOT_POLL = 2            # seconds between "is the TV on yet?" queries while it starts
 
 LOG_RING = deque(maxlen=200)
@@ -242,6 +244,8 @@ def validate(settings):
         if s[key] and s[key] in norm_pcs:
             problems.append(f"{key} {s[key]} is also listed in pc_addresses. If the PC is "
                             "behind the soundbar, leave soundbar_address unset")
+    if not isinstance(s["watch_pc_power"], bool):
+        problems.append("watch_pc_power must be true or false")
     if s["select_soundbar_audio"] and not s["soundbar_pc_audio_address"]:
         problems.append("select_soundbar_audio needs soundbar_pc_audio_address")
 
@@ -365,6 +369,9 @@ class Controller:
         self.name_lookup_tries = 0
         self.pc_seen_up = False         # PC answered ping during this stay on its input
         self.pc_offline_since = None    # PC dropped off while on screen, waiting to confirm sleep
+        self.pc_down_since = None       # PC stopped answering ping
+        self.power_note = None          # (what, time): the PC announced sleep, reboot or poweroff
+        self.power_link = None          # (state, time): the power watcher's SSH session, up | closed | lost
         self.timers = []                # (due, description, function)
         self.next_power_poll = t + 3    # first query shortly after start
         self.startup_check_at = t + 6
@@ -476,6 +483,8 @@ class Controller:
             self.on_pc_name(event[1])
         elif kind == "cec_out":
             self.on_cec_out(event[1])
+        elif kind == "pc_power":
+            self.on_pc_power(event[1])
 
     def lookup_pc_name(self):
         """Ask the PC for its name once it is reachable, unless the config sets one."""
@@ -607,6 +616,54 @@ class Controller:
             return
         self.actions.key(code, name)
 
+    def on_pc_power(self, what):
+        """What the power watcher heard from the PC: sleep, resume, reboot, poweroff,
+        shutdown, or link_up / link_closed / link_lost for its own SSH session."""
+        t = self.now()
+        if what.startswith("link_"):
+            self.power_link = (what[5:], t)
+            log("WATCHER", f"Power watcher session {what[5:]}", level="DEBUG")
+            return
+        if what == "resume":
+            self.power_note = None
+            log("WATCHER", "PC says it woke up")
+            return
+        if what not in PC_ANNOUNCED:
+            return
+        note = self.power_note
+        if what == "shutdown" and note and note[0] in ("reboot", "poweroff") and t - note[1] < 10:
+            return      # the plain signal that follows the one saying which kind of shutdown
+        self.power_note = (what, t)
+        log("WATCHER", {"sleep": "PC says it is going to sleep", "reboot": "PC says it is restarting",
+                        "poweroff": "PC says it is shutting down",
+                        "shutdown": "PC says it is shutting down or restarting"}[what])
+
+    def power_state(self):
+        """on | asleep | off | restarting | unknown, or None before the first ping."""
+        if self.pc_online is None:
+            return None
+        if self.pc_online:
+            return "on"
+        t = self.now()
+        since = self.pc_down_since if self.pc_down_since is not None else self.started_at
+
+        def recent(event):
+            return event is not None and event[1] >= since - 120
+
+        if recent(self.power_note):
+            state = PC_ANNOUNCED[self.power_note[0]]
+            if state == "restarting" and t - since > 300:
+                return "off"        # it never came back
+            return state
+        if recent(self.power_link) and self.power_link[0] == "closed":
+            return "off"            # shutting down stops the SSH server, sleep doesn't
+        if self.last_suspend is not None and self.last_suspend >= since - 120:
+            return "asleep"
+        if self.power_link and (self.power_link[0] == "up" or
+                                (self.power_link[0] == "lost" and recent(self.power_link))):
+            return "asleep"         # the session froze rather than closed
+        return "unknown"
+
     def on_ping(self, online):
         prev = self.pc_online
         self.pc_online = online
@@ -616,23 +673,33 @@ class Controller:
         if prev is None:
             if online:
                 self.pc_online_since = t
+            else:
+                self.pc_down_since = t
             log("WATCHER", f"PC is {'reachable' if online else 'not reachable'}")
             return
         if online == prev:
             return
         if not online:
-            log("WATCHER", "PC is now unreachable (asleep or off)")
+            self.pc_down_since = t
+            state = self.power_state()
+            log("WATCHER", "PC is now unreachable (" + {"asleep": "asleep", "off": "turned off",
+                                                       "restarting": "restarting"}.get(state, "asleep or off") + ")")
             if self.suspend_attempts:
                 log("SUSPEND", "Confirmed: the PC went to sleep")
             elif self.desired() == "awake" and self.pc_seen_up:
                 self.pc_offline_since = t
                 log("WATCHER", f"PC dropped off while on screen. If it stays offline for "
-                               f"{self.cfg.pc_sleep_confirm}s it was put to sleep on purpose, "
+                               f"{self.cfg.pc_sleep_confirm}s it was put to sleep or turned off on purpose, "
                                f"and it won't be woken again")
             return
         self.pc_online_since = t
+        was = self.power_note[0] if self.power_note else None
+        self.power_note = None
+        if was in ("reboot", "shutdown") and self.pc_down_since is not None and t - self.pc_down_since < 600:
+            log("WATCHER", "PC is back after restarting")
         if self.pc_offline_since is not None:
-            log("WATCHER", "PC is back (it was only a network blip)")
+            if was not in ("reboot", "shutdown"):
+                log("WATCHER", "PC is back (it was only a network blip)")
             self.pc_offline_since = None
         ours = self.last_wol is not None and t - self.last_wol <= self.cfg.wake_correlation
         d = self.desired()
@@ -651,18 +718,19 @@ class Controller:
     def handle_pc_slept(self):
         """The PC went to sleep by itself (Steam menu, power button) while on screen."""
         self.pc_offline_since = None
+        went = "was turned off" if self.power_state() == "off" else "went to sleep"
         mode = self.cfg.on_pc_sleep
         if mode == "switch":
             target = self.cfg.pc_sleep_switch_to
             self.cec(f"tx {self.la:x}F:82:{target}",
-                     f"PC went to sleep: switching to {self.input_name(target)}")
-            self.set_input(target, "self", " (PC went to sleep)")
+                     f"PC {went}: switching to {self.input_name(target)}")
+            self.set_input(target, "self", f" (PC {went})")
         elif mode == "standby":
-            self.cec("standby 0", "PC went to sleep: putting the TV in standby")
+            self.cec("standby 0", f"PC {went}: putting the TV in standby")
             self.tv_power = "standby"
-            self.set_input("standby", "standby", " (PC went to sleep)")
+            self.set_input("standby", "standby", f" (PC {went})")
         else:
-            log("WATCHER", "PC went to sleep while on screen. Leaving the TV as it is "
+            log("WATCHER", f"PC {went} while on screen. Leaving the TV as it is "
                            "(on_pc_sleep = \"nothing\")")
 
     def auto_switch_to_pc(self):
@@ -759,7 +827,8 @@ class Controller:
         if d == "awake" and self.pc_online is True:
             self.pc_seen_up = True
         if (self.pc_offline_since is not None and self.pc_online is False and d == "awake"
-                and t - self.pc_offline_since >= self.cfg.pc_sleep_confirm):
+                and t - self.pc_offline_since >= self.cfg.pc_sleep_confirm
+                and self.power_state() != "restarting"):
             self.handle_pc_slept()
             d = self.desired()
         if d == "awake":
@@ -817,6 +886,7 @@ class Controller:
             "tv_input_for_seconds": int(t - self.input_since),
             "pc_should_be": self.desired() or "unknown",
             "pc_reachable": self.pc_online,
+            "pc_power": self.power_state() or "unknown",
             "wol_attempts": self.wol_attempts,
             "suspend_attempts": self.suspend_attempts,
             "guard_active": t < self.guard_until and self.tv_input in self.pc_set,
@@ -995,6 +1065,75 @@ class DryRunActions(RealActions):
         log("DRY-RUN", f"Would send key '{name}' -> HID 0x{code:02x}")
 
 
+# Run on the PC by the power watcher. gdbus comes with GLib, which SteamOS and
+# Bazzite both have. Without it, the session still tells shutdown (it closes)
+# from sleep (it freezes).
+POWER_WATCH_COMMAND = ("if command -v gdbus >/dev/null 2>&1; then exec gdbus monitor --system "
+                       "--dest org.freedesktop.login1 --object-path /org/freedesktop/login1; "
+                       "else echo couchlink-watching; exec sleep infinity; fi")
+
+
+def parse_power_line(line):
+    """One line of gdbus monitor output -> sleep | resume | reboot | poweroff | shutdown | None."""
+    if "PrepareForSleep (true" in line:
+        return "sleep"
+    if "PrepareForSleep (false" in line:
+        return "resume"
+    if "PrepareForShutdownWithMetadata (true" in line:
+        return "reboot" if "'reboot'" in line or "'kexec'" in line else "poweroff"
+    if "PrepareForShutdown (true" in line:
+        return "shutdown"
+    return None
+
+
+def power_link_end(stderr):
+    """How the watcher's SSH session ended: lost (the PC stopped answering, as
+    in sleep) or closed (the PC ended it, as in shutdown)."""
+    return "lost" if "not responding" in stderr or "timed out" in stderr.lower() else "closed"
+
+
+def power_watcher(cfg, events):
+    """Keep an SSH session open while the PC is up and post ("pc_power", ...) events."""
+    target = f"{cfg.ssh_user}@{cfg.pc_host}"
+    warned = False
+    while True:
+        try:
+            up = subprocess.run(["ping", "-c", "1", "-W", "1", cfg.pc_host], stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=5).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            up = False
+        if not up:
+            time.sleep(cfg.ping_interval)
+            continue
+        connected = False
+        try:
+            proc = subprocess.Popen(
+                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
+                 "-o", "ServerAliveCountMax=3", target, POWER_WATCH_COMMAND],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            for line in proc.stdout:
+                if not connected:
+                    connected = True
+                    warned = False
+                    events.put(("pc_power", "link_up"))
+                what = parse_power_line(line)
+                if what:
+                    events.put(("pc_power", what))
+            proc.wait()
+            err = proc.stderr.read()
+        except OSError as e:
+            err = str(e)
+        if connected:
+            events.put(("pc_power", "link_" + power_link_end(err)))
+        else:
+            if not warned:
+                log("WATCHER", f"Can't watch the PC's power state over SSH ({err.strip() or 'no answer'}). "
+                               "The status page shows 'Asleep or off' until the SSH key works", level="WARN")
+                warned = True
+            time.sleep(30)
+        time.sleep(cfg.ping_interval)
+
+
 def pinger(cfg, events):
     warned = False
     while True:
@@ -1043,6 +1182,7 @@ body[data-state="online"]   { --accent: var(--green);  --accent-soft: rgba(52, 2
 body[data-state="waking"]   { --accent: var(--cyan);   --accent-soft: rgba(34, 211, 238, 0.35); }
 body[data-state="sleeping"] { --accent: var(--amber);  --accent-soft: rgba(251, 191, 36, 0.35); }
 body[data-state="asleep"]   { --accent: var(--violet); --accent-soft: rgba(167, 139, 250, 0.30); }
+body[data-state="off"]      { --accent: #64748b;       --accent-soft: rgba(100, 116, 139, 0.30); }
 body[data-state="unknown"]  { --accent: #94a3b8;       --accent-soft: rgba(148, 163, 184, 0.25); }
 
 * { box-sizing: border-box; }
@@ -1311,11 +1451,16 @@ footer a { color: var(--muted); }
   function accent(tileId, color) { $(tileId).style.setProperty("--tile-accent", color || "transparent"); }
 
   function view(d) {
-    var want = d.pc_should_be, up = d.pc_reachable;
+    var want = d.pc_should_be, up = d.pc_reachable, power = d.pc_power;
+    var waiting = want === "awake" ? "The TV is still on the PC's input" : "Waiting for the TV to switch to it";
     if (want === "awake" && up) return ["online", "Online", "Ready to play"];
-    if (want === "awake") return ["waking", "Waking up", "Sending Wake-on-LAN"];
     if (want === "asleep" && up) return ["sleeping", "Going to sleep", "TV is elsewhere, suspending the PC"];
-    if (want === "asleep") return ["asleep", "Asleep", "Waiting for the TV to switch to it"];
+    if (power === "restarting") return ["waking", "Restarting", "The PC is restarting"];
+    if (want === "awake" && d.wol_attempts) return ["waking", "Waking up", "Sending Wake-on-LAN"];
+    if (power === "off") return ["off", "Off", waiting];
+    if (power === "asleep") return ["asleep", "Asleep", waiting];
+    if (want === "awake") return ["waking", "Waking up", "Sending Wake-on-LAN"];
+    if (want === "asleep") return ["asleep", "Asleep or off", waiting];
     return ["unknown", "Standing by", "Waiting for the TV to announce an input"];
   }
 
@@ -1355,7 +1500,8 @@ footer a { color: var(--muted); }
     $("hIn").textContent = "for " + dur(d.tv_input_for_seconds);
     accent("tIn", onPc ? "var(--green)" : null);
 
-    set("vNet", d.pc_reachable === null ? "Checking" : d.pc_reachable ? "Reachable" : "Offline",
+    var offline = {asleep: "Asleep", off: "Off", restarting: "Restarting"}[d.pc_power] || "Offline";
+    set("vNet", d.pc_reachable === null ? "Checking" : d.pc_reachable ? "Reachable" : offline,
         d.pc_reachable ? "good" : d.pc_reachable === false ? "calm" : "dim");
     $("hNet").textContent = d.pc_host || "-";
     accent("tNet", d.pc_reachable ? "var(--green)" : null);
@@ -1716,6 +1862,8 @@ def main(argv=None):
                    f"PC input: {', '.join(ctl.input_name(a) for a in cfg.pc_addresses)}, "
                    f"Pi: {ctl.input_name(cfg.pi_address)}, PC address: {cfg.pc_host}")
     threading.Thread(target=pinger, args=(cfg, events), daemon=True).start()
+    if cfg.watch_pc_power:
+        threading.Thread(target=power_watcher, args=(cfg, events), daemon=True).start()
     if cfg.dashboard_port:
         start_dashboard(cfg.dashboard_port, ctl)
 

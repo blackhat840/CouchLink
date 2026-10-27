@@ -383,6 +383,9 @@ class FlowTests(unittest.TestCase):
         self.assertIsNone(couchlink.parse_rx("NOTICE: connected"))
         self.assertEqual(couchlink.parse_key("DEBUG: key pressed: fast forward (49)"), "fast forward")
 
+    def test_status_page_links_to_repo(self):
+        self.assertIn('href="https://github.com/blackhat840/CouchLink"', couchlink.DASHBOARD_HTML)
+
     def test_input_names(self):
         s = Sim()
         n = s.ctl.input_name

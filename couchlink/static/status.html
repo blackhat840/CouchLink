@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#070a12">
+<title>CouchLink</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-state="unknown">
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="48" y2="48"><stop offset="0" stop-color="#22d3ee"/><stop offset=".6" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs>
+        <rect x="3" y="9" width="42" height="27" rx="5" stroke="url(#g)" stroke-width="3"/>
+        <path d="M17 42h14" stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M15 22.5h6M18 19.5v6" stroke="url(#g)" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="29" cy="21" r="1.9" fill="url(#g)"/><circle cx="33.5" cy="25" r="1.9" fill="url(#g)"/>
+      </svg>
+      <span class="word">CouchLink</span>
+    </div>
+    <span class="chip" id="version">v-</span>
+    <span class="chip dry" id="dry" hidden>Dry run</span>
+    <span class="spacer"></span>
+    <span class="live" id="live"><span class="dot"></span><span id="liveText">Connecting</span></span>
+  </header>
+
+  <div class="lost" id="lost" role="status" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+    <div><strong>Lost contact with CouchLink</strong><span id="lostText">Check that the Pi is on and on the network.</span></div>
+  </div>
+
+  <section class="panel hero" aria-live="polite">
+    <div class="orb">
+      <svg viewBox="0 4 64 64" fill="none" aria-hidden="true">
+        <path d="M18 20h28c6.5 0 10.5 5 11.6 12.4l1.8 12.2c.6 4.3-2.3 7.4-6.2 7.4-2.6 0-4.4-1.4-5.8-3.5L44 43H20l-3.4 5.5C15.2 50.6 13.4 52 10.8 52c-3.9 0-6.8-3.1-6.2-7.4l1.8-12.2C7.5 25 11.5 20 18 20z" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
+        <path d="M17 28v9M12.5 32.5h9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="44" cy="29" r="2.6" fill="currentColor"/><circle cx="49.5" cy="35" r="2.6" fill="currentColor"/>
+      </svg>
+    </div>
+    <div>
+      <div class="kicker" id="kicker">Gaming PC</div>
+      <div class="state" id="state">Connecting</div>
+      <div class="sub" id="sub"><span id="subText">Waiting for CouchLink</span><span class="muted" id="subHost"></span></div>
+      <div class="path" aria-label="Signal path">
+        <span class="node" id="nTv"><span class="led"></span>TV</span>
+        <span class="link" id="l1"></span>
+        <span class="node" id="nIn"><span class="led"></span><span id="nInText">Input</span></span>
+        <span class="link" id="l2"></span>
+        <span class="node" id="nPc"><span class="led"></span>PC</span>
+      </div>
+      <div class="controls" id="controls" aria-label="Controls" hidden>
+        <div class="buttons" id="buttons">
+          <button class="btn primary" type="button" id="bWake">Wake PC</button>
+          <button class="btn" type="button" id="bWakeTv">Wake PC and TV</button>
+          <button class="btn" type="button" id="bEnd">End remote session</button>
+          <button class="btn" type="button" id="bSleep">Put PC to sleep</button>
+        </div>
+        <div class="note" id="ctlNote" role="status"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="panel tile" id="tTv"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="13" rx="2"/><path d="M8 21h8"/></svg>TV power</div><div class="value" id="vTv">-</div><div class="hint" id="hTv">-</div></div>
+    <div class="panel tile" id="tIn"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h11M4 17h16M15 4l3 3-3 3"/></svg>TV input</div><div class="value" id="vIn">-</div><div class="hint" id="hIn">-</div></div>
+    <div class="panel tile" id="tNet"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M10 6h4M10 10h4"/><circle cx="12" cy="17" r="1"/></svg>PC</div><div class="value" id="vNet">-</div><div class="hint" id="hNet">-</div></div>
+    <div class="panel tile" id="tWol"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v10M6.3 6.3a8 8 0 1 0 11.4 0"/></svg>Wake-on-LAN</div><div class="value" id="vWol">-</div><div class="hint" id="hWol">-</div></div>
+    <div class="panel tile" id="tSus"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>Suspend</div><div class="value" id="vSus">-</div><div class="hint" id="hSus">-</div></div>
+    <div class="panel tile" id="tGuard"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/></svg>Input guard</div><div class="value" id="vGuard">-</div><div class="hint" id="hGuard">-</div></div>
+    <div class="panel tile" id="tSleep"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 2h6"/></svg>Sleep check</div><div class="value" id="vSleep">-</div><div class="hint" id="hSleep">-</div></div>
+    <div class="panel tile" id="tUp"><div class="label"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>CouchLink uptime</div><div class="value" id="vUp">-</div><div class="hint" id="hUp">-</div></div>
+  </section>
+
+  <section class="panel console">
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" id="tabLog" aria-selected="true">Events<span class="count" id="cLog"></span></button>
+      <button class="tab" role="tab" id="tabCec" aria-selected="false">CEC traffic<span class="count" id="cCec"></span></button>
+    </div>
+    <div class="lines" id="lines" role="log"></div>
+  </section>
+
+  <footer>
+    <span id="verFoot">CouchLink</span>
+    <span id="updated">Not updated yet</span>
+    <span>Refreshes every 2 seconds</span>
+    <a href="/api">Raw JSON</a>
+    <a href="https://github.com/blackhat840/CouchLink" target="_blank" rel="noopener">CouchLink on GitHub</a>
+  </footer>
+</div>
+
+<script src="/status.js"></script>
+</body>
+</html>

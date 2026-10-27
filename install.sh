@@ -3,8 +3,14 @@
 #
 # Couchlink installer and updater for Raspberry Pi OS.
 #
-# Run from the folder that holds couchlink.py, couchlink.example.toml and
-# (optionally) test_couchlink.py:
+# install.sh works on its own. If couchlink.py is not next to it, it downloads
+# the latest release from GitHub and installs that:
+#
+#     curl -fsSLO https://raw.githubusercontent.com/blackhat840/CouchLink/main/install.sh
+#     sudo bash install.sh
+#
+# It also works from a folder that holds all of the files (a git clone or a
+# release download), and then installs those files:
 #
 #     sudo bash install.sh              # first install
 #     sudo bash install.sh --with-hid   # first install + USB keyboard for remote buttons
@@ -12,11 +18,11 @@
 #
 # More update options:
 #
-#     --update --release v2.2    install that release
-#     --update --release         list the releases and ask which one to install
+#     --release v2.3.1           install that release
+#     --release                  list the releases and ask which one to install
 #     --list-releases            list the releases
-#     --update --local           install the files next to this script instead
-#                                (after git pull, or files copied by hand)
+#     --local                    install the files next to this script, never
+#                                download (after git pull, or files copied by hand)
 #
 # First install:
 #   1. Installs cec-utils and ping
@@ -51,9 +57,8 @@ while [ $# -gt 0 ]; do
         --local) LOCAL=1 ;;
         --list-releases) LIST=1 ;;
         --release)
-            UPDATE=1
             if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then RELEASE="$2"; shift; else PICK=1; fi ;;
-        --release=*) UPDATE=1; RELEASE="${1#*=}" ;;
+        --release=*) RELEASE="${1#*=}" ;;
         -h|--help) awk 'NR > 2 && /^#/ { sub(/^# ?/, ""); print; next } NR > 2 { exit }' "$0"; exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
@@ -169,16 +174,33 @@ if [ "$LIST" = 1 ]; then
     exit 0
 fi
 
-if [ "$UPDATE" = 1 ] && [ "$LOCAL" = 0 ]; then
-    [ -f "$BIN" ] && [ -f "$CONF" ] || die "No existing install found. Run without --update first."
-    OLD_VER="$(version_of "$BIN")"
+# Download a release when asked to, or when the program files are not next to
+# this script (someone downloaded install.sh on its own).
+HAVE_FILES=0
+[ -f "$HERE/couchlink.py" ] && [ -f "$HERE/couchlink.example.toml" ] && HAVE_FILES=1
+INSTALLED=0
+[ -f "$BIN" ] && [ -f "$CONF" ] && INSTALLED=1
+REMOTE=0
+if [ "$LOCAL" = 0 ] && { [ "$UPDATE" = 1 ] || [ -n "$RELEASE" ] || [ "$PICK" = 1 ] || [ "$HAVE_FILES" = 0 ]; }; then
+    REMOTE=1
+fi
+
+if [ "$REMOTE" = 1 ]; then
+    if [ "$UPDATE" = 1 ] && [ "$INSTALLED" = 0 ]; then
+        die "No existing install found. Run without --update to install Couchlink."
+    fi
+    if [ "$UPDATE" = 0 ] && [ "$INSTALLED" = 1 ]; then
+        say "Couchlink is already installed, so this updates it"
+        UPDATE=1
+    fi
+    [ "$INSTALLED" = 0 ] || OLD_VER="$(version_of "$BIN")"
     LATEST=0
     if [ "$PICK" = 1 ]; then
         have_tty || die "No terminal to choose from. Use --release <name> (see --list-releases)."
         OUT="$(release_tool list)" || exit 1
         [ -n "$OUT" ] || die "No releases found"
         mapfile -t TAGS < <(printf '%s\n' "$OUT" | cut -f1)
-        say "Couchlink releases (installed: ${OLD_VER:-unknown})"
+        say "Couchlink releases (installed: ${OLD_VER:-none})"
         i=1
         printf '%s\n' "$OUT" | while IFS=$'\t' read -r tag date name pre; do
             printf '  %2d) %-10s %s  %s %s\n' "$i" "$tag" "$date" "$name" "$pre"
@@ -191,7 +213,8 @@ if [ "$UPDATE" = 1 ] && [ "$LOCAL" = 0 ]; then
         RELEASE="$(release_tool latest)" || exit 1
         LATEST=1
     fi
-    CMP="$(release_tool cmp "$RELEASE" "${OLD_VER:-0}")"
+    CMP=1
+    [ "$INSTALLED" = 0 ] || CMP="$(release_tool cmp "$RELEASE" "${OLD_VER:-0}")"
     if [ "$CMP" = 0 ] && [ "$LATEST" = 1 ]; then
         say "Couchlink ${OLD_VER} is already the latest release ($RELEASE). Nothing to do."
         exit 0
@@ -205,13 +228,14 @@ if [ "$UPDATE" = 1 ] && [ "$LOCAL" = 0 ]; then
     trap 'rm -rf "$TMP"' EXIT
     say "Downloading Couchlink $RELEASE from GitHub"
     SRC="$(release_tool fetch "$RELEASE" "$TMP")" || exit 1
-    ARGS=(--update)
+    ARGS=()
+    [ "$UPDATE" = 0 ] || ARGS+=(--update)
     [ "$WITH_HID" = 0 ] || ARGS+=(--with-hid)
     COUCHLINK_RELEASE_TAG="$RELEASE" bash "$SRC/install.sh" "${ARGS[@]}"
     exit 0
 fi
 
-[ -f "$HERE/couchlink.py" ] || die "couchlink.py not found next to this script"
+[ -f "$HERE/couchlink.py" ] || die "couchlink.py not found next to this script. Run without --local to download it."
 [ -f "$HERE/couchlink.example.toml" ] || die "couchlink.example.toml not found next to this script"
 NEW_VER="$(version_of "$HERE/couchlink.py")"
 
@@ -448,23 +472,26 @@ fi
 
 # ---------------------------------------------------------------- next steps
 say "Done. Next steps"
+DOCS="https://github.com/blackhat840/CouchLink/blob/main/docs"
 cat <<STEPS
-1. Find the CEC addresses (stop the service first if it's running):
+1. Find your CEC addresses. Guide: $DOCS/configuration.md
      sudo systemctl stop couchlink.service 2>/dev/null; echo "scan" | cec-client -s -d 1
-2. Fill in the config:
+2. Fill in the config, then check it:
      sudo nano /etc/couchlink/config.toml
      sudo couchlink --check-config
-3. Dry run (changes nothing; watch it decide). Ctrl+C to stop:
-     sudo couchlink --dry-run
-   Status page: http://$(hostname 2>/dev/null || echo '<pi>').local:8080
-4. Before going live, give root an SSH key the PC trusts:
+3. Set up the PC so the Pi can wake it and put it to sleep.
+   Guide: $DOCS/preparing-the-pc.md
+4. Give root on the Pi an SSH key the PC trusts:
      sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519
      sudo ssh-copy-id deck@<pc-ip>
      sudo ssh deck@<pc-ip> "echo ok"
-5. Go live:
+5. Try a dry run. It changes nothing. Press Ctrl+C to stop:
+     sudo couchlink --dry-run
+   Status page: http://$(hostname 2>/dev/null || echo '<pi>').local:8080
+6. Go live:
      sudo systemctl enable --now couchlink.service
      sudo journalctl -u couchlink.service -f
-6. Later updates (installs the latest release from GitHub):
+7. Later, to update to the latest release, run this from the same folder:
      sudo bash install.sh --update
 STEPS
 if [ "$REBOOT_NEEDED" = 1 ]; then

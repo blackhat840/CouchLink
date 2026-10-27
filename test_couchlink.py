@@ -791,6 +791,50 @@ class InstallerTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("Could not reach GitHub", out)
 
+    def lone_script(self):
+        """Only install.sh, as if it was downloaded on its own."""
+        for name in ("couchlink.py", "couchlink.example.toml"):
+            os.remove(os.path.join(self.src, name))
+
+    def not_installed(self):
+        os.remove(os.path.join(self.root, "usr/local/bin/couchlink"))
+        os.remove(os.path.join(self.root, "etc/couchlink/config.toml"))
+
+    def test_lone_script_installs_latest_release(self):
+        self.lone_script()
+        self.not_installed()
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.3")         # a first install, not --update
+
+    def test_lone_script_installs_chosen_release(self):
+        self.lone_script()
+        self.not_installed()
+        code, out = self.install("--release", "v2.2", "--with-hid")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.stub_ran(), "ran v2.2 --with-hid")
+
+    def test_lone_script_updates_an_existing_install(self):
+        self.lone_script()
+        code, out = self.install()
+        self.assertEqual(code, 0, out)
+        self.assertIn("already installed, so this updates it", out)
+        self.assertEqual(self.stub_ran(), "ran v2.3 --update")
+
+    def test_update_without_an_install_explains(self):
+        self.not_installed()
+        code, out = self.install("--update")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Run without --update to install Couchlink", out)
+        self.assertIsNone(self.stub_ran())
+
+    def test_local_without_the_files_explains(self):
+        self.lone_script()
+        code, out = self.install("--local")
+        self.assertNotEqual(code, 0)
+        self.assertIn("Run without --local to download it", out)
+        self.assertIsNone(self.stub_ran())
+
     def test_release_marker_not_passed_on_to_the_tests(self):
         probe = os.path.join(self.root, "probe")
         with open(os.path.join(self.src, "test_couchlink.py"), "w") as f:

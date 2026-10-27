@@ -36,14 +36,16 @@ See [Installation](docs/installation.md#what-you-need) for details.
 
 ## Quick start
 
-On the Pi, plugged into the TV:
+On the Pi, plugged into the TV and logged in over SSH:
 
 ```bash
-sudo apt install -y git
-git clone https://github.com/blackhat840/Couchlink.git
-cd Couchlink
+curl -fsSLO https://raw.githubusercontent.com/blackhat840/CouchLink/main/install.sh
 sudo bash install.sh
 ```
+
+The installer downloads the latest release and sets everything up. No git or
+GitHub account needed. New to the Pi? Follow the
+[step by step guide](docs/installation.md#step-by-step).
 
 Then:
 
@@ -56,8 +58,9 @@ Then:
 
 ## Updating
 
+On the Pi, in the folder that holds `install.sh`:
+
 ```bash
-cd Couchlink
 sudo bash install.sh --update
 ```
 

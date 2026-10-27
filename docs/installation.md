@@ -25,27 +25,33 @@ Wired Ethernet is the most reliable way to wake the PC. See
 2. **Plug the Pi into the TV** before powering it on, and power it from the
    PWR port. The first boot takes a few minutes.
 
-3. **Get the files onto the Pi.**
+3. **Log in to the Pi** from your computer. Open Terminal on a Mac or Linux,
+   or PowerShell on Windows, and run this with the username and hostname you
+   set in step 1:
 
    ```bash
-   sudo apt install -y git
-   git clone https://github.com/blackhat840/Couchlink.git
-   cd Couchlink
+   ssh <username>@couchlink.local
    ```
 
-   Or copy `couchlink.py`, `couchlink.example.toml`, `test_couchlink.py` and
-   `install.sh` into one folder with any SFTP client.
-
-4. **Run the installer.**
+4. **Download and run the installer** on the Pi:
 
    ```bash
-   sudo bash install.sh              # Couchlink only
-   sudo bash install.sh --with-hid   # also the USB keyboard (reboot afterwards)
+   curl -fsSLO https://raw.githubusercontent.com/blackhat840/CouchLink/main/install.sh
+   sudo bash install.sh
    ```
 
-   It installs `cec-utils`, runs the offline tests, installs the program as
+   To also set up the USB keyboard for TV remote buttons, run
+   `sudo bash install.sh --with-hid` instead, then reboot when it finishes.
+
+   The installer downloads the latest release from GitHub, installs
+   `cec-utils`, runs the offline tests, installs the program as
    `/usr/local/bin/couchlink`, creates `/etc/couchlink/config.toml`, and
-   installs `couchlink.service` without enabling it.
+   installs `couchlink.service` without enabling it. You do not need git or a
+   GitHub account. At the end it prints the next steps.
+
+   If you prefer git, `git clone https://github.com/blackhat840/Couchlink.git`,
+   then `cd Couchlink` and `sudo bash install.sh` installs the files from the
+   clone instead.
 
 5. **Find your CEC addresses** and fill in the config. See
    [Configuration](configuration.md).
@@ -103,10 +109,10 @@ sudo systemctl disable --now couchlink.service
 
 ## Updating
 
-From the folder you installed from, run:
+Log in to the Pi and run this in the folder that holds `install.sh`. If you
+followed the steps above, that is your home folder:
 
 ```bash
-cd Couchlink
 sudo bash install.sh --update
 ```
 
@@ -114,8 +120,8 @@ This downloads the latest release from GitHub and installs it. Other options:
 
 | Command | What it does |
 |---|---|
-| `sudo bash install.sh --update --release v2.3.1` | Installs that release |
-| `sudo bash install.sh --update --release` | Lists the releases and asks which one to install |
+| `sudo bash install.sh --release v2.3.1` | Installs that release |
+| `sudo bash install.sh --release` | Lists the releases and asks which one to install |
 | `bash install.sh --list-releases` | Lists the releases |
 | `sudo bash install.sh --update --local` | Installs the files next to `install.sh` instead, for example after `git pull` |
 

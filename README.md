@@ -579,7 +579,11 @@ sudo journalctl -u couchlink.service | grep -E "\[(INPUT|SUSPEND|WOL)\]"
 ### Status page
 
 Open `http://<pi>:8080` on a phone or computer on the same network. It updates
-every 2 seconds and shows:
+every 2 seconds.
+
+![The Couchlink status page with the PC online on HDMI 1.2](docs/dashboard.png)
+
+It shows:
 
 - The PC's name and state (online, waking up, going to sleep, asleep), and the
   path from the TV to the PC. The name comes from `pc_name`, or from the PC's
@@ -587,6 +591,7 @@ every 2 seconds and shows:
 - TV power and input, whether the PC answers on the network, Wake-on-LAN and
   suspend attempts, the input guard, the sleep check and uptime.
 - Recent events and raw CEC traffic, each in its own tab.
+- Links to the raw JSON and to this repository.
 
 The page loads nothing from the internet.
 
@@ -646,6 +651,7 @@ login, so keep the page on a trusted network.
 | `install.sh` | Installer and updater |
 | `test_couchlink.py` | Offline tests. Run with `python3 test_couchlink.py` |
 | `README.md` | This file |
+| `docs/dashboard.png` | Screenshot of the status page |
 
 What gets installed on the Pi:
 

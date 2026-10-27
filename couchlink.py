@@ -1284,6 +1284,7 @@ footer a { color: var(--muted); }
     <span id="updated">Not updated yet</span>
     <span>Refreshes every 2 seconds</span>
     <a href="/api">Raw JSON</a>
+    <a href="https://github.com/blackhat840/CouchLink" target="_blank" rel="noopener">Couchlink on GitHub</a>
   </footer>
 </div>
 

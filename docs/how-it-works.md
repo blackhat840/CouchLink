@@ -97,6 +97,35 @@ because the SSH key isn't set up yet, the status page shows "Asleep or off".
 While the PC is restarting, the `on_pc_sleep` action does not run. If a
 restart takes longer than 5 minutes, CouchLink treats the PC as off.
 
+## Remote sessions
+
+Normally the PC is awake only while the TV is on its input. A remote session
+keeps it awake without the TV, for streaming to another device with Steam
+Link or Moonlight.
+
+CouchLink has two kinds of wake:
+
+| Wake | What happens |
+|---|---|
+| Wake PC | Starts a remote session. CouchLink sends Wake-on-LAN and keeps the PC awake. The TV is left alone. |
+| Wake PC and TV | Same as waking the PC with a controller. The TV turns on and switches to the PC. |
+
+A remote session ends when:
+
+- `remote_session_hours` pass (4 by default)
+- it is ended by hand
+- the TV is switched to the PC, which turns it into normal use
+- the PC goes to sleep or is turned off
+
+A restart does not end it. When a session ends and the TV is on another input,
+CouchLink waits `away_debounce` seconds and then suspends the PC, as it does
+after leaving the PC's input.
+
+A remote session has to be started by CouchLink. If something else wakes the
+PC, such as Moonlight's own Wake-on-LAN or a phone app, CouchLink sees the PC
+wake by itself and turns the TV on and switches it to the PC
+(`auto_switch_on_pc_wake`).
+
 ---
 
 Back to the [Documentation](README.md) or the [README](../README.md).

@@ -99,6 +99,7 @@ DEFAULTS = {
     "guard_delay": 1.5,
     "max_guard_recoveries": 2,
     "auto_switch_cooldown": 30,
+    "remote_session_hours": 4,          # a remote session keeps the PC awake this long without the TV
     "tv_boot_timeout": 20,              # PC woke with the TV off: wait this long for the TV to report on
     "tv_boot_reclaims": 3,              # then claim the PC's input this many more times
     "tv_boot_reclaim_interval": 2,      # this far apart, while the TV finishes starting
@@ -271,6 +272,7 @@ def validate(settings):
 
     for key in ("away_debounce", "suspend_retry_interval", "wol_retry_interval", "wake_correlation",
                 "guard_window", "guard_delay", "auto_switch_cooldown", "power_poll_interval",
+                "remote_session_hours",
                 "pc_sleep_confirm", "tv_boot_timeout", "tv_boot_reclaim_interval",
                 "ping_interval", "tick_interval"):
         if not isinstance(s[key], (int, float)) or isinstance(s[key], bool) or s[key] < 0:
@@ -286,6 +288,8 @@ def validate(settings):
         problems.append("dashboard_port must be 0-65535 (0 = off)")
     if not isinstance(s["cec_client_command"], list) or not s["cec_client_command"]:
         problems.append("cec_client_command must be a list, e.g. [\"cec-client\", \"-d\", \"8\"]")
+    if s["remote_session_hours"] == 0:
+        problems.append("remote_session_hours must be greater than 0")
     if s["ping_interval"] == 0 or s["tick_interval"] == 0:
         problems.append("ping_interval and tick_interval must be greater than 0")
     return SimpleNamespace(**s), problems
@@ -361,6 +365,9 @@ class Controller:
         self.guard_until = 0
         self.guard_count = 0
         self.last_auto_switch = None
+        self.session_until = None       # remote session: keep the PC awake without the TV until then
+        self.session_ended_at = None    # so the PC gets the usual away_debounce after a session
+        self.session_seen_up = False    # the PC came up during this session, so stop sending WoL
         self.tv_boot_started = None     # we turned the TV on and are waiting for it to report on
         self.next_boot_poll = 0
         self.tv_settle_until = 0        # the TV reported on, re-claims run until then
@@ -454,6 +461,8 @@ class Controller:
             self.tv_power = "on"
         log("INPUT", f"TV input: {self.input_name(prev)} -> {self.input_name(addr)}{detail}")
         if addr in self.pc_set:
+            if self.session_active():
+                self.end_session("the TV was switched to the PC")
             self.on_pc_input_selected(source)
         return True
 
@@ -485,6 +494,10 @@ class Controller:
             self.on_pc_name(event[1])
         elif kind == "cec_out":
             self.on_cec_out(event[1])
+        elif kind == "wake":
+            self.wake(tv=event[1])
+        elif kind == "end_session":
+            self.end_session("ended by hand")
         elif kind == "pc_power":
             self.on_pc_power(event[1])
 
@@ -687,6 +700,9 @@ class Controller:
             state = self.power_state()
             log("WATCHER", "PC is now unreachable (" + {"asleep": "asleep", "off": "turned off",
                                                        "restarting": "restarting"}.get(state, "asleep or off") + ")")
+            if self.session_active() and state != "restarting":
+                self.end_session("the PC went to sleep" if state == "asleep" else
+                                 "the PC was turned off" if state == "off" else "the PC went offline")
             if self.suspend_attempts:
                 log("SUSPEND", "Confirmed: the PC went to sleep")
             elif self.desired() == "awake" and self.pc_seen_up:
@@ -706,6 +722,10 @@ class Controller:
             self.pc_offline_since = None
         ours = self.last_wol is not None and t - self.last_wol <= self.cfg.wake_correlation
         d = self.desired()
+        if self.session_active() and d != "awake":
+            self.session_seen_up = True
+            log("WATCHER", "PC is now reachable (remote session). Leaving the TV as it is")
+            return
         if d == "awake":
             log("WATCHER", "PC is now reachable" + (" (woken by CouchLink)" if ours else ""))
             # Its HDMI outputs just came alive. This is when a soundbar or TV may switch by itself.
@@ -736,22 +756,82 @@ class Controller:
             log("WATCHER", f"PC {went} while on screen. Leaving the TV as it is "
                            "(on_pc_sleep = \"nothing\")")
 
-    def auto_switch_to_pc(self):
+    # ---- remote sessions ------------------------------------------------
+    def session_active(self):
+        return self.session_until is not None and self.now() < self.session_until
+
+    def wake(self, tv):
+        """Wake the PC on request. With tv, like a controller wake: the TV turns on and
+        switches to the PC. Without, a remote session: the PC stays awake, the TV is left alone."""
+        if tv:
+            log("ACTION", "Wake PC and TV requested")
+            # Wake it even if it was put to sleep on this input or earlier wakes gave up
+            self.wol_attempts = 0
+            self.wake_gave_up = False
+            self.pc_seen_up = bool(self.pc_online)
+            self.pc_offline_since = None
+            self.auto_switch_to_pc(requested=True)
+            return
+        if self.tv_input in self.pc_set:
+            log("ACTION", "Wake PC requested, but the TV is already on the PC. No remote session needed")
+            return
+        t = self.now()
+        hours = self.cfg.remote_session_hours
+        extending = self.session_active()
+        self.session_until = t + hours * 3600
+        self.session_ended_at = None
+        self.suspend_attempts = 0
+        self.sleep_gave_up = False
+        if self.pc_online:
+            self.session_seen_up = True
+        elif not extending:
+            self.session_seen_up = False
+            self.wol_attempts = 0
+            self.wake_gave_up = False
+        log("ACTION", f"Remote session {'extended' if extending else 'started'}: keeping the PC awake "
+                      f"for {hours:g}h without the TV")
+
+    def end_session(self, why):
+        if self.session_until is None:
+            return
+        self.session_until = None
+        self.session_ended_at = self.now()
+        log("ACTION", f"Remote session ended: {why}")
+
+    def session_tick(self, t):
+        """Wake the PC for a remote session, and end the session when it runs out."""
+        if t >= self.session_until:
+            self.end_session(f"{self.cfg.remote_session_hours:g}h passed (remote_session_hours)")
+            return
+        if self.pc_online is True:
+            self.session_seen_up = True
+        elif self.session_seen_up:
+            if self.pc_online is False and self.power_state() == "off":
+                self.end_session("the PC did not come back after restarting")
+        else:
+            self.send_wol(t)
+            if self.wake_gave_up:
+                self.end_session("the PC never answered Wake-on-LAN")
+
+    def auto_switch_to_pc(self, requested=False):
         mode = self.cfg.auto_switch_on_pc_wake
         t = self.now()
         tv_off = self.tv_power == "standby" or self.tv_input == "standby"
-        if mode == "never" or (mode == "if_tv_on" and tv_off):
+        if not requested and (mode == "never" or (mode == "if_tv_on" and tv_off)):
             log("WATCHER", f"Not switching the TV (auto_switch_on_pc_wake = \"{mode}\"). "
                            "The PC goes back to sleep if the TV stays on another input")
             return
-        if self.last_auto_switch is not None and t - self.last_auto_switch < self.cfg.auto_switch_cooldown:
+        if (not requested and self.last_auto_switch is not None
+                and t - self.last_auto_switch < self.cfg.auto_switch_cooldown):
             log("WATCHER", f"Not switching the TV: it was switched to the PC less than "
                            f"{self.cfg.auto_switch_cooldown}s ago (auto_switch_cooldown)")
             return
         self.last_auto_switch = t
-        self.cec("on 0", "PC woke by itself: turning the TV on")
+        self.cec("on 0", "Wake PC and TV requested: turning the TV on" if requested
+                 else "PC woke by itself: turning the TV on")
+        why = " (Wake PC and TV)" if requested else " (PC woke by itself)"
         if self.tv_power == "on" and self.tv_input != "standby":
-            self.set_input(self.pc_primary, "self", " (PC woke by itself)")
+            self.set_input(self.pc_primary, "self", why)
             return
         # The TV is off or its state is unknown. A starting TV may switch to the Pi
         # (Image View On came from the Pi's input) or route to another device, so
@@ -761,7 +841,7 @@ class Controller:
         self.tv_settle_until = 0
         log("TV", f"Waiting up to {self.cfg.tv_boot_timeout}s for the TV to report that it is on "
                   "before switching it to the PC")
-        self.set_input(self.pc_primary, "boot", " (PC woke by itself, TV starting)")
+        self.set_input(self.pc_primary, "boot", why[:-1] + ", TV starting)")
 
     def tv_ready(self):
         """The TV finished starting (or never answered). Claim the PC's input, then again a few times."""
@@ -835,6 +915,10 @@ class Controller:
                 and self.power_state() != "restarting"):
             self.handle_pc_slept()
             d = self.desired()
+        if self.session_until is not None and d != "awake":
+            self.session_tick(t)
+            if self.session_active():
+                return
         if d == "awake":
             self.ensure_awake(t)
         elif d == "asleep":
@@ -845,6 +929,10 @@ class Controller:
             return
         if self.pc_seen_up:
             return      # it was up on this input and went down by itself: don't fight the user
+        self.send_wol(t)
+
+    def send_wol(self, t):
+        """Send Wake-on-LAN, or wait for the retry interval, or give up after max_wol_attempts."""
         if self.wol_attempts and t - self.last_wol < self.cfg.wol_retry_interval:
             return
         if self.wol_attempts >= self.cfg.max_wol_attempts:
@@ -864,6 +952,8 @@ class Controller:
         away_for = t - self.input_since
         if away_for < self.cfg.away_debounce:
             return
+        if self.session_ended_at is not None and t - self.session_ended_at < self.cfg.away_debounce:
+            return      # a remote session just ended: give it the same wait as leaving the input
         if self.last_suspend is not None and t - self.last_suspend < self.cfg.suspend_retry_interval:
             return
         if self.suspend_attempts >= self.cfg.max_suspend_attempts:
@@ -918,6 +1008,7 @@ class Controller:
             "on_pc_sleep_target": (self.input_name(self.cfg.pc_sleep_switch_to)
                                    if self.cfg.pc_sleep_switch_to else None),
             "power_poll_interval": self.cfg.power_poll_interval,
+            "remote_session_seconds_left": (int(self.session_until - t) if self.session_active() else None),
             "last_wol_seconds_ago": int(t - self.last_wol) if self.last_wol is not None else None,
             "last_suspend_seconds_ago": int(t - self.last_suspend) if self.last_suspend is not None else None,
             "uptime_seconds": int(t - self.started_at),
@@ -1511,6 +1602,12 @@ footer a { color: var(--muted); }
     var want = d.pc_should_be, up = d.pc_reachable, power = d.pc_power;
     var waiting = want === "awake" ? "The TV is still on the PC's input" : "Waiting for the TV to switch to it";
     if (want === "awake" && up) return ["online", "Online", "Ready to play"];
+    var left = d.remote_session_seconds_left;
+    if (left !== null && left !== undefined && want !== "awake") {
+      if (up) return ["online", "Remote session", "Ready to stream, " + dur(left) + " left"];
+      if (power === "restarting") return ["waking", "Restarting", "Remote session. Waiting for the PC to come back"];
+      return ["waking", "Waking up", "Starting a remote session"];
+    }
     if (want === "asleep" && up) return ["sleeping", "Going to sleep", "The TV is on another input"];
     if (power === "restarting") return ["waking", "Restarting", "Waiting for the PC to come back"];
     if (want === "awake" && d.wol_attempts) return ["waking", "Waking up", "Sending Wake-on-LAN to the PC"];

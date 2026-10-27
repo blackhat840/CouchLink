@@ -52,6 +52,7 @@ tv_boot_timeout = 20                 # PC woke with the TV off: seconds to wait 
 max_guard_recoveries = 2
 power_poll_interval = 60
 pc_sleep_confirm = 12                # seconds offline before the PC counts as asleep
+remote_session_hours = 4             # how long a remote session keeps the PC awake without the TV
 
 [diagnostics]
 raw_debug = true                     # log raw CEC traffic, turn off once everything works

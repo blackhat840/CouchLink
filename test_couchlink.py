@@ -1317,5 +1317,175 @@ class PcNameTests(unittest.TestCase):
         self.assertTrue(any("pc_name" in p for p in problems))
 
 
+class RemoteSessionTests(unittest.TestCase):
+    """Waking the PC for streaming without the TV, and Wake PC and TV."""
+
+    def tv_elsewhere(self, pc_up=False, **overrides):
+        s = Sim(**dict(REAL, **overrides))
+        s.pc(pc_up)
+        s.ev(("pc_power", "link_up"))
+        s.ev(msg("5f:81:11:00"))                        # TV on the streamer
+        s.run(30)
+        s.act.cec.clear()
+        return s
+
+    def left(self, s):
+        return s.ctl.snapshot()["remote_session_seconds_left"]
+
+    def tv_commands(self, s):
+        return [c for c in s.act.cec if c != "pow 0"]  # power queries don't change the TV
+
+    def test_session_wakes_pc_and_leaves_tv_alone(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        self.assertEqual(s.act.wols, 1)
+        s.run(5)
+        s.pc(True)
+        s.run(3600)
+        self.assertEqual(s.act.wols, 1)
+        self.assertEqual(s.act.suspends, 0)             # kept awake without the TV
+        self.assertEqual(self.tv_commands(s), [])                 # TV not touched
+        self.assertEqual(s.ctl.tv_input, "11:00")
+        self.assertAlmostEqual(self.left(s), 3 * 3600 - 5, delta=2)
+
+    def test_session_retries_wol_then_gives_up(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        s.run(300)
+        self.assertEqual(s.act.wols, s.cfg.max_wol_attempts)
+        self.assertIsNone(self.left(s))                 # ended, not stuck waking
+
+    def test_wake_again_extends_session(self):
+        s = self.tv_elsewhere(remote_session_hours=1)
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(1800)
+        s.ev(("wake", False))
+        self.assertAlmostEqual(self.left(s), 3600, delta=2)
+        self.assertEqual(s.act.wols, 1)
+
+    def test_pc_already_on_is_kept_awake(self):
+        s = self.tv_elsewhere(pc_up=True, away_debounce=60)
+        s.ev(("wake", False))
+        s.run(600)
+        self.assertEqual(s.act.wols, 0)
+        self.assertEqual(s.act.suspends, 0)
+
+    def test_timeout_then_waits_away_debounce(self):
+        s = self.tv_elsewhere(remote_session_hours=0.1)
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(359)
+        self.assertEqual(s.act.suspends, 0)
+        s.run(3)
+        self.assertIsNone(self.left(s))                 # ended
+        self.assertEqual(s.act.suspends, 0)             # not right away
+        s.run(s.cfg.away_debounce)
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_end_by_hand(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(60)
+        s.ev(("end_session",))
+        self.assertIsNone(self.left(s))
+        s.run(s.cfg.away_debounce + 1)
+        self.assertEqual(s.act.suspends, 1)
+
+    def test_tv_switched_to_pc_becomes_normal_use(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(60)
+        s.ev(msg("5f:81:12:00"))                        # TV switched to the PC
+        self.assertIsNone(self.left(s))
+        s.run(60)
+        s.ev(msg("5f:81:11:00"))                        # and away again
+        s.run(s.cfg.away_debounce + 1)
+        self.assertEqual(s.act.suspends, 1)             # usual rules again
+
+    def test_pc_going_to_sleep_ends_session(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(60)
+        s.ev(("pc_power", "sleep"))
+        s.pc(False)
+        self.assertIsNone(self.left(s))
+        s.run(300)
+        self.assertEqual(s.act.wols, 1)                 # not woken again
+        self.assertEqual(self.tv_commands(s), [])
+
+    def test_restart_keeps_session(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(60)
+        s.ev(("pc_power", "reboot"))
+        s.pc(False)
+        s.run(60)
+        self.assertIsNotNone(self.left(s))
+        self.assertEqual(s.ctl.snapshot()["pc_power"], "restarting")
+        s.pc(True)
+        s.run(600)
+        self.assertIsNotNone(self.left(s))
+        self.assertEqual(s.act.wols, 1)
+        self.assertEqual(s.act.suspends, 0)
+        self.assertEqual(self.tv_commands(s), [])
+
+    def test_restart_that_never_comes_back_ends_session(self):
+        s = self.tv_elsewhere()
+        s.ev(("wake", False))
+        s.pc(True)
+        s.run(60)
+        s.ev(("pc_power", "reboot"))
+        s.pc(False)
+        s.run(400)
+        self.assertIsNone(self.left(s))
+        self.assertEqual(s.act.wols, 1)
+
+    def test_not_needed_when_tv_is_on_pc(self):
+        s = Sim(**REAL)
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.ev(("wake", False))
+        self.assertIsNone(self.left(s))
+
+    def test_wake_pc_and_tv(self):
+        s = self.tv_elsewhere(auto_switch_on_pc_wake="never")
+        s.ev(("wake", True))
+        self.assertIn("on 0", s.act.cec)
+        s.run(2)
+        self.assertIn("tx 1F:82:12:00", s.act.cec)
+        self.assertEqual(s.ctl.tv_input, "12:00")
+        self.assertEqual(s.act.wols, 1)
+        self.assertIsNone(self.left(s))
+
+    def test_wake_pc_and_tv_after_pc_slept_on_screen(self):
+        s = Sim(**dict(REAL, on_pc_sleep="nothing", pc_sleep_switch_to=None))
+        s.pc(True)
+        s.ev(msg("5f:81:12:00"))
+        s.run(30)
+        s.pc(False)                                     # put to sleep on screen
+        s.run(60)
+        self.assertEqual(s.act.wols, 0)
+        s.ev(("wake", True))
+        s.run(1)
+        self.assertEqual(s.act.wols, 1)                 # a request wakes it anyway
+
+    def test_wake_pc_and_tv_with_tv_off(self):
+        s = self.tv_elsewhere()
+        s.ev(msg("0f:36"))                              # TV to standby
+        s.run(10)
+        s.ev(("wake", True))
+        self.assertIn("on 0", s.act.cec)
+        self.assertTrue(s.ctl.snapshot()["tv_starting"])
+
+    def test_setting_must_be_positive(self):
+        _, problems = couchlink.validate(dict(BASE, remote_session_hours=0))
+        self.assertTrue(any("remote_session_hours" in p for p in problems))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

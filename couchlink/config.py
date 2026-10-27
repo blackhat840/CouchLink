@@ -52,6 +52,7 @@ DEFAULTS = {
     "hid_passthrough": True,
     "hidg_device": "/dev/hidg0",
     "dashboard_port": 8080,             # 0 disables the status page
+    "use_tv": True,                     # false: no TV. Only wake the PC for remote play and put it to sleep
     "status_page_buttons": True,        # wake and sleep buttons on the status page, no key needed
     "admin_password_hash": "",          # set by "sudo couchlink --admin-password". The settings page
     "api_keys": {},                     # the [api_keys] table: name = hash. Lets scripts use the API
@@ -166,11 +167,15 @@ def validate(settings):
         if not isinstance(s[key], str) or not s[key].strip():
             problems.append(f"{key} must be a non-empty string")
 
+    use_tv = s["use_tv"] is not False      # without a TV, CouchLink needs no CEC addresses
+    if not isinstance(s["use_tv"], bool):
+        problems.append("use_tv must be true or false")
     pcs = s["pc_addresses"]
     if isinstance(pcs, str):
         pcs = [pcs]
     if not isinstance(pcs, list) or not pcs:
-        problems.append("pc_addresses is not set (e.g. [\"30:00\"])")
+        if use_tv:
+            problems.append("pc_addresses is not set (e.g. [\"30:00\"])")
         pcs = []
     norm_pcs = []
     for a in pcs:
@@ -181,7 +186,7 @@ def validate(settings):
             norm_pcs.append(n)
     s["pc_addresses"] = norm_pcs
 
-    for key, required in (("pi_address", True), ("soundbar_address", False),
+    for key, required in (("pi_address", use_tv), ("soundbar_address", False),
                           ("soundbar_pc_audio_address", False)):
         if s[key] is None:
             if required:

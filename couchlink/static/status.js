@@ -37,6 +37,7 @@
 
   function view(d) {
     var want = d.pc_should_be, up = d.pc_reachable, power = d.pc_power;
+    if (d.tv === false) return viewNoTv(d, up, power);
     var tvOff = d.tv_power === "standby" || d.tv_input_address === "standby";
     var waiting = want === "awake" ? "The TV is still on the PC's input"
                 : tvOff ? "The TV is off" : "Waiting for the TV to switch to it";
@@ -57,8 +58,23 @@
     return ["unknown", "Standing by", "Waiting to hear which input the TV is on"];
   }
 
+  // Without a TV (use_tv = false), only the PC matters: is it ready to stream to?
+  function viewNoTv(d, up, power) {
+    var session = d.remote_session_seconds;
+    var inSession = session !== null && session !== undefined;
+    if (up && inSession) return ["online", "Remote session", "Ready to stream. Started " + dur(session) + " ago"];
+    if (up) return ["online", "Online", "Ready to stream"];
+    if (power === "restarting") return ["waking", "Restarting", "Waiting for the PC to come back"];
+    if (inSession) return ["waking", "Waking up", "Starting a remote session"];
+    if (power === "off") return ["off", "Off", "Turn it on by hand. Wake-on-LAN usually can't start a PC that is off"];
+    if (power === "asleep") return ["asleep", "Asleep", "Press Wake PC to stream"];
+    if (d.pc_reachable === false) return ["asleep", "Asleep or off", "Press Wake PC to stream"];
+    return ["unknown", "Checking", "Waiting to hear from the PC"];
+  }
+
   function render(d) {
     last = d;
+    document.body.classList.toggle("no-tv", d.tv === false);
     var v = view(d);
     document.body.setAttribute("data-state", v[0]);
     put("state", v[1]);
@@ -159,8 +175,9 @@
     if (!allowed) return;
     var onPc = d.pc_should_be === "awake";
     var session = d.remote_session_seconds !== null && d.remote_session_seconds !== undefined;
-    $("bWake").hidden = onPc || session;
-    $("bWakeTv").hidden = onPc && up(d);
+    var noTv = d.tv === false;
+    $("bWake").hidden = onPc || session || (noTv && up(d));
+    $("bWakeTv").hidden = noTv || (onPc && up(d));
     $("bEnd").hidden = !session;
     $("bSleep").hidden = !up(d);
     if (Date.now() < noteUntil) return;

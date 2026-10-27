@@ -10,7 +10,7 @@ import time
 
 from . import VERSION
 from .actions import DryRunActions, RealActions
-from .cec import CecClient
+from .cec import CecClient, NoCec
 from . import common
 from .common import DEFAULT_CONFIG_PATH, EX_CONFIG, log
 from .config import load_config, migrate_config, validate
@@ -83,16 +83,20 @@ def main(argv=None):
 
     events = queue.Queue()
     try:
-        cec = CecClient(cfg.cec_client_command, events, cfg.raw_debug)
+        cec = CecClient(cfg.cec_client_command, events, cfg.raw_debug) if cfg.use_tv else NoCec()
     except FileNotFoundError:
         log("STARTUP", f"{cfg.cec_client_command[0]} is not installed (sudo apt install cec-utils)",
             level="ERROR")
         sys.exit(EX_CONFIG)
     actions = (DryRunActions if args.dry_run else RealActions)(cfg, cec, events)
     ctl = Controller(cfg, actions)
-    log("STARTUP", f"CouchLink {VERSION}{' DRY RUN' if args.dry_run else ''} starting. "
-                   f"PC input: {', '.join(ctl.input_name(a) for a in cfg.pc_addresses)}, "
-                   f"Pi: {ctl.input_name(cfg.pi_address)}, PC address: {cfg.pc_host}")
+    if cfg.use_tv:
+        log("STARTUP", f"CouchLink {VERSION}{' DRY RUN' if args.dry_run else ''} starting. "
+                       f"PC input: {', '.join(ctl.input_name(a) for a in cfg.pc_addresses)}, "
+                       f"Pi: {ctl.input_name(cfg.pi_address)}, PC address: {cfg.pc_host}")
+    else:
+        log("STARTUP", f"CouchLink {VERSION}{' DRY RUN' if args.dry_run else ''} starting without a TV "
+                       f"(use_tv = false). PC address: {cfg.pc_host}")
     threading.Thread(target=pinger, args=(cfg, events), daemon=True).start()
     if cfg.watch_pc_power:
         threading.Thread(target=power_watcher, args=(cfg, events), daemon=True).start()

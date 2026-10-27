@@ -179,6 +179,36 @@ def setup_ssh_key(host, user, out):
     return False
 
 
+def tv_questions(prompt, current, out):
+    """What to do when the PC wakes or sleeps by itself. Returns (wake mode, sleep mode or None)."""
+    out("")
+    out("When the PC wakes by itself, for example from a controller or its power button:")
+    out("  1) turn the TV on and switch it to the PC")
+    out("  2) switch the TV to the PC only if the TV is already on")
+    out("  3) leave the TV alone. The PC goes back to sleep unless you switch the TV to it")
+    out("This is not for remote play. To stream to another device, use Wake PC on the status")
+    out("page, which keeps the PC awake without the TV.")
+    wake_modes = {"1": "always", "2": "if_tv_on", "3": "never"}
+    default = {v: k for k, v in wake_modes.items()}.get(current.get("auto_switch_on_pc_wake"), "1")
+    wake_mode = wake_modes[prompt("Choose 1, 2 or 3", default, lambda a: a in wake_modes, "Enter 1, 2 or 3.")]
+
+    out("")
+    sleep_mode = None
+    if current.get("on_pc_sleep") == "switch":
+        out("When the PC goes to sleep by itself, the TV switches to another input. Keeping that.")
+        out("Change it with: sudo couchlink --setup-cec")
+    else:
+        out("When the PC goes to sleep by itself, for example from the Steam menu:")
+        out("  1) leave the TV alone")
+        out("  2) turn the TV off")
+        out("Switching the TV to another input, such as a streaming box, is set up with the CEC")
+        out("addresses: sudo couchlink --setup-cec")
+        default = "2" if current.get("on_pc_sleep") == "standby" else "1"
+        choice = prompt("Choose 1 or 2", default, lambda a: a in ("1", "2"), "Enter 1 or 2.")
+        sleep_mode = "standby" if choice == "2" else "nothing"
+    return wake_mode, sleep_mode
+
+
 def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_ssh_key,
               pc_check=pc_answers, waker=None, service=None, secret=getpass.getpass):
     """Ask for the settings that don't need CEC addresses and write them to the config."""
@@ -235,30 +265,16 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
                   "Use 40 characters or fewer.", blank_ok=True)
 
     out("")
-    out("When the PC wakes by itself, for example from a controller or its power button:")
-    out("  1) turn the TV on and switch it to the PC")
-    out("  2) switch the TV to the PC only if the TV is already on")
-    out("  3) leave the TV alone. The PC goes back to sleep unless you switch the TV to it")
-    out("This is not for remote play. To stream to another device, use Wake PC on the status")
-    out("page, which keeps the PC awake without the TV.")
-    wake_modes = {"1": "always", "2": "if_tv_on", "3": "never"}
-    default = {v: k for k, v in wake_modes.items()}.get(current.get("auto_switch_on_pc_wake"), "1")
-    wake_mode = wake_modes[prompt("Choose 1, 2 or 3", default, lambda a: a in wake_modes, "Enter 1, 2 or 3.")]
-
-    out("")
-    sleep_mode = None
-    if current.get("on_pc_sleep") == "switch":
-        out("When the PC goes to sleep by itself, the TV switches to another input. Keeping that.")
-        out("Change it with: sudo couchlink --setup-cec")
-    else:
-        out("When the PC goes to sleep by itself, for example from the Steam menu:")
-        out("  1) leave the TV alone")
-        out("  2) turn the TV off")
-        out("Switching the TV to another input, such as a streaming box, is set up with the CEC")
-        out("addresses: sudo couchlink --setup-cec")
-        default = "2" if current.get("on_pc_sleep") == "standby" else "1"
-        choice = prompt("Choose 1 or 2", default, lambda a: a in ("1", "2"), "Enter 1 or 2.")
-        sleep_mode = "standby" if choice == "2" else "nothing"
+    out("Is the Pi plugged into a TV?")
+    out("  1) Yes. CouchLink follows the TV: the PC wakes when you switch to it and sleeps when")
+    out("     you switch away")
+    out("  2) No. CouchLink only wakes the PC for remote play, such as streaming to a Steam Deck,")
+    out("     and puts it to sleep when asked. The PC's own sleep timer does the rest")
+    use_tv = prompt("Choose 1 or 2", "1" if current.get("use_tv", True) else "2",
+                    lambda a: a in ("1", "2"), "Enter 1 or 2.") == "1"
+    wake_mode = sleep_mode = None
+    if use_tv:
+        wake_mode, sleep_mode = tv_questions(prompt, current, out)
 
     out("")
     out("The status page can show buttons to wake the PC and put it to sleep. They need no key,")
@@ -297,7 +313,7 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
     for key, value in (("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")),
                        ("ssh_user", user), ("pc_name", name or None),
                        ("auto_switch_on_pc_wake", wake_mode), ("on_pc_sleep", sleep_mode),
-                       ("status_page_buttons", buttons),
+                       ("use_tv", use_tv), ("status_page_buttons", buttons),
                        ("admin_password_hash", hash_password(password) if password else None)):
         if value is not None:
             text = set_config_value(text, key, value)

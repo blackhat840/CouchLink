@@ -793,6 +793,19 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(self.stub_ran(), "ran v2.3 --update --with-hid")
 
+    def test_setup_flags_use_the_installed_copy_and_need_a_terminal(self):
+        for flag in ("--setup", "--setup-cec"):
+            code, out = self.install(flag)
+            self.assertNotEqual(code, 0)
+            self.assertIn(f"{flag} asks questions, so run it from a terminal", out)
+            self.assertIsNone(self.stub_ran())                     # nothing downloaded or installed
+
+    def test_setup_flags_need_an_install(self):
+        os.remove(os.path.join(self.root, "usr/local/bin/couchlink"))
+        code, out = self.install("--setup-cec")
+        self.assertNotEqual(code, 0)
+        self.assertIn("isn't installed yet", out)
+
     def test_already_on_latest_does_nothing(self):
         self.latest = "v2.1"
         code, out = self.install("--update")
@@ -979,11 +992,16 @@ class SetupTests(unittest.TestCase):
         self.assertTrue(new.startswith('pi_address = "40:00" '))
         self.assertEqual(new.index("# REQUIRED\n"), text.index("# REQUIRED"))
 
+    def test_set_value_keeps_the_next_line(self):
+        text = '# soundbar_address = "10:00"\n# soundbar_pc_audio_address = "12:00"  # only if\n'
+        new = couchlink.set_config_value(text, "soundbar_address", "10:00")
+        self.assertEqual(new, 'soundbar_address = "10:00"\n# soundbar_pc_audio_address = "12:00"  # only if\n')
+
     def test_set_value_adds_a_missing_key(self):
         self.assertEqual(couchlink.set_config_value("a = 1\n", "ssh_user", "deck"), 'a = 1\nssh_user = "deck"\n')
 
     def test_setup_fills_in_the_pc_settings(self):
-        code, s = self.setup(["192.168.1.50", "", "", "2", "n"], found_mac="aa:bb:cc:dd:ee:01")
+        code, s = self.setup(["192.168.1.50", "", "", "", "", "2", "", "n"], found_mac="aa:bb:cc:dd:ee:01")
         self.assertEqual(code, 0)
         self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("192.168.1.50", "aa:bb:cc:dd:ee:01", "deck", "standby"))
@@ -998,15 +1016,15 @@ class SetupTests(unittest.TestCase):
 
     def test_setup_asks_again_after_a_bad_answer(self):
         code, s = self.setup(["", "target-pc.local", "192.168.1.50", "zz", "AA-BB-CC-DD-EE-02",
-                              "bazzite user", "gamer", "3", "1", "y"])
+                              "bazzite user", "gamer", "", "", "3", "1", "", "y"])
         self.assertEqual(code, 0)
         self.assertEqual((s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("aa:bb:cc:dd:ee:02", "gamer", "nothing"))
         self.assertEqual(self.ssh_calls, [("192.168.1.50", "gamer")])
 
     def test_setup_offers_the_saved_values(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "2", "n"])
-        code, s = self.setup(["", "", "", "", "n"])
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "", "", "2", "", "n"])
+        code, s = self.setup(["", "", "", "", "", "", "", "n"])
         self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "standby"))
 
@@ -1017,7 +1035,7 @@ class SetupTests(unittest.TestCase):
         text = couchlink.set_config_value(text, "pc_sleep_switch_to", "11:00")
         with open(self.path, "w") as f:
             f.write(text)
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "n"])   # no sleep question
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "", "n"])   # no sleep question
         self.assertEqual((s["on_pc_sleep"], s["pc_sleep_switch_to"]), ("switch", "11:00"))
 
     def test_setup_completes_a_config(self):
@@ -1027,8 +1045,204 @@ class SetupTests(unittest.TestCase):
         text = couchlink.set_config_value(text, "pi_address", "40:00")
         with open(self.path, "w") as f:
             f.write(text)
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "1", "n"])
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n"])
         self.assertIn("The config is complete", "\n".join(self.output))
+
+    def test_setup_asks_for_name_wake_and_api_key(self):
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "Living Room PC", "2", "1", "y", "n"])
+        self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
+        key = next(line for line in self.output if line.startswith("New API key: ")).split(": ", 1)[1]
+        self.assertEqual(s["api_key_hash"], couchlink.hash_api_key(key))
+        with open(self.path) as f:
+            self.assertNotIn(key, f.read())
+        code, s = self.setup(["", "", "", "", "", "", "", "n"])          # Enter keeps them all
+        self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
+        self.assertEqual(s["api_key_hash"], couchlink.hash_api_key(key))
+
+    def test_set_value_writes_a_list(self):
+        new = couchlink.set_config_value('pc_addresses = []                    # REQUIRED\n', "pc_addresses", ["12:00"])
+        self.assertTrue(new.startswith('pc_addresses = ["12:00"]'))
+
+    def test_unset_value_comments_out(self):
+        text = 'soundbar_address = "10:00"\nb = 1\n'
+        self.assertEqual(couchlink.unset_config_value(text, "soundbar_address"), '# soundbar_address = "10:00"\nb = 1\n')
+
+
+SCAN_OUTPUT = """opening a connection to the CEC adapter...
+requesting CEC bus information ...
+CEC bus information
+===================
+device #0: TV
+address:       0.0.0.0
+active source: no
+vendor:        Samsung
+osd string:    TV
+CEC version:   1.4
+power status:  on
+
+
+device #1: Recorder 1
+address:       4.0.0.0
+vendor:        Pulse Eight
+osd string:    CECTester
+
+
+device #4: Playback 1
+address:       1.1.0.0
+vendor:        Google
+osd string:    Chromecast
+
+
+device #5: Audio
+address:       1.0.0.0
+vendor:        Samsung
+osd string:    Soundbar
+
+currently active source: unknown (-1)
+"""
+
+
+class CecSetupTests(unittest.TestCase):
+    """couchlink --setup-cec, with a scripted bus and answers instead of a TV and a person."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.path = os.path.join(self.tmp, "config.toml")
+        shutil.copy(os.path.join(HERE, "couchlink.example.toml"), self.path)
+        with open(self.path) as f:
+            text = f.read()
+        text = couchlink.set_config_value(text, "pc_host", "192.168.1.50")
+        text = couchlink.set_config_value(text, "pc_mac", "aa:bb:cc:dd:ee:01")
+        with open(self.path, "w") as f:
+            f.write(text)
+        self.output, self.service_calls = [], []
+
+    def run_setup(self, answers, heard=(), scan=SCAN_OUTPUT, running=True):
+        answers, heard = list(answers), list(heard)
+
+        def ask(question):
+            self.assertTrue(answers, f"unexpected question: {question}")
+            return answers.pop(0)
+
+        def watch(command, seconds, wanted, out):
+            while heard:
+                addr = heard.pop(0)
+                if wanted(addr):
+                    return addr
+            return None
+
+        def service(action):
+            self.service_calls.append(action)
+            return running
+        code = couchlink.run_cec_setup(self.path, ask=ask, out=self.output.append,
+                                       scan=lambda command: couchlink.parse_scan(scan), watch=watch, service=service)
+        self.assertEqual(answers, [], "not every answer was used")
+        settings, problems = couchlink.load_config(self.path)
+        self.assertEqual(problems, [])
+        return code, settings
+
+    def test_parse_scan(self):
+        d = couchlink.parse_scan(SCAN_OUTPUT)
+        self.assertEqual([(x["logical"], x["address"]) for x in d], [(0, "00:00"), (1, "40:00"), (4, "11:00"), (5, "10:00")])
+        self.assertEqual(d[3]["osd"], "Soundbar")
+
+    def test_announced_address(self):
+        self.assertEqual(couchlink.announced_address(msg("5f:81:12:00")[1]), "12:00")
+        self.assertEqual(couchlink.announced_address(msg("0f:80:10:00:20:00")[1]), "20:00")
+        self.assertIsNone(couchlink.announced_address(msg("05:90:00")[1]))
+        self.assertIsNone(couchlink.announced_address(None))
+
+    def test_pc_behind_soundbar_heard(self):
+        # The TV announces the soundbar's input first, then the soundbar the PC's.
+        code, s = self.run_setup(["3", "y", "y", "y", "1"], heard=["10:00", "12:00"])
+        self.assertEqual(code, 0)
+        self.assertEqual((s["pc_addresses"], s["pi_address"], s["soundbar_address"]), (["12:00"], "40:00", "10:00"))
+        self.assertEqual((s["on_pc_sleep"], s["pc_sleep_switch_to"]), ("switch", "11:00"))
+        self.assertEqual(self.service_calls, ["stop", "start"])
+        self.assertIn("The config is complete", "\n".join(self.output))
+        self.assertTrue(os.path.exists(self.path + ".bak"))
+
+    def test_tv_only_typed_input(self):
+        code, s = self.run_setup(["1", "2", "n"], heard=[])          # nothing heard: type the input
+        self.assertEqual((s["pc_addresses"], s["pi_address"], s["soundbar_address"]), (["20:00"], "40:00", None))
+        self.assertEqual(s["on_pc_sleep"], "nothing")
+
+    def test_soundbar_on_arc_pc_on_tv(self):
+        code, s = self.run_setup(["2", "y", "y", "n"], heard=["30:00"])
+        self.assertEqual((s["pc_addresses"], s["soundbar_address"]), (["30:00"], "10:00"))
+
+    def test_typed_input_behind_soundbar(self):
+        code, s = self.run_setup(["3", "y", "n", "2", "n"], heard=["13:00"])   # wrong one heard
+        self.assertEqual(s["pc_addresses"], ["12:00"])
+
+    def test_tv_only_comments_out_an_old_soundbar(self):
+        with open(self.path) as f:
+            text = couchlink.set_config_value(f.read(), "soundbar_address", "10:00")
+        with open(self.path, "w") as f:
+            f.write(text)
+        code, s = self.run_setup(["1", "y", "n"], heard=["20:00"])
+        self.assertIsNone(s["soundbar_address"])
+
+    def test_sleep_target_heard(self):
+        code, s = self.run_setup(["1", "y", "y", "3"], heard=["20:00", "30:00"])   # 3: listen
+        self.assertEqual((s["on_pc_sleep"], s["pc_sleep_switch_to"]), ("switch", "30:00"))
+
+    def test_declining_switch_turns_it_off(self):
+        with open(self.path) as f:
+            text = couchlink.set_config_value(f.read(), "on_pc_sleep", "switch")
+        text = couchlink.set_config_value(text, "pc_sleep_switch_to", "11:00")
+        with open(self.path, "w") as f:
+            f.write(text)
+        code, s = self.run_setup(["1", "y", "n"], heard=["20:00"])
+        self.assertEqual(s["on_pc_sleep"], "nothing")
+
+    def test_pi_missing_from_scan_is_asked(self):
+        scan = SCAN_OUTPUT.replace("device #1: Recorder 1\naddress:       4.0.0.0", "")
+        code, s = self.run_setup(["1", "4", "y", "n"], heard=["20:00"], scan=scan)
+        self.assertEqual(s["pi_address"], "40:00")
+
+    def fake_cec_client(self, body):
+        path = os.path.join(self.tmp, "cec-client")
+        with open(path, "w") as f:
+            f.write("#!/usr/bin/env python3\nimport sys, time\n" + body)
+        os.chmod(path, 0o755)
+        return [path]
+
+    def test_cec_scan_runs_cec_client(self):
+        command = self.fake_cec_client(
+            "assert sys.argv[1:] == ['-s', '-d', '1'], sys.argv\n"
+            "assert sys.stdin.read().strip() == 'scan'\n"
+            f"print({SCAN_OUTPUT!r})\n")
+        self.assertEqual([d["address"] for d in couchlink.cec_scan(command)], ["00:00", "40:00", "11:00", "10:00"])
+
+    def test_cec_watch_returns_the_first_wanted_input(self):
+        command = self.fake_cec_client(
+            "print('opening a connection to the CEC adapter...', flush=True)\n"
+            "print('waiting for input', flush=True)\n"
+            "print('TRAFFIC: [ 1]\\t>> 0f:80:40:00:10:00', flush=True)\n"   # the soundbar: not wanted
+            "print('TRAFFIC: [ 2]\\t>> 5f:81:12:00', flush=True)\n"
+            "time.sleep(30)\n")
+        lines = []
+        addr = couchlink.cec_watch(command, 10, lambda a: a != "10:00", out=lines.append)
+        self.assertEqual(addr, "12:00")
+        self.assertIn("Listening now", lines[0])
+
+    def test_cec_watch_gives_up(self):
+        command = self.fake_cec_client("print('waiting for input', flush=True)\ntime.sleep(30)\n")
+        self.assertIsNone(couchlink.cec_watch(command, 1, lambda a: True, out=lambda line: None))
+
+    def test_no_devices(self):
+        code, _ = self.run_setup(["1"], scan="")
+        self.assertEqual(code, 1)
+        self.assertIn("No CEC devices answered", "\n".join(self.output))
+        self.assertEqual(self.service_calls, ["stop", "start"])        # started again anyway
+        with open(self.path) as f:
+            self.assertIn("pc_addresses = []", f.read())            # nothing written
+
+    def test_service_left_stopped_if_it_was(self):
+        self.run_setup(["1", "y", "n"], heard=["20:00"], running=False)
+        self.assertEqual(self.service_calls, ["stop"])
 
 
 OLD_CONFIG = """# A config from before 2.4

@@ -9,6 +9,32 @@ in. A device on TV input 2 is `2.0.0.0`. A device on input 1 of a soundbar
 that is itself on TV input 1 is `1.1.0.0`. CouchLink accepts either `1.1.0.0` or
 the short form `11:00`.
 
+CouchLink finds them for you. Turn the TV on, plug in and turn on the PC, and
+run:
+
+```bash
+sudo bash install.sh --setup-cec
+```
+
+`sudo couchlink --setup-cec` does the same. The installer offers it after the
+settings on a first install. It:
+
+1. Asks how the PC is connected: to the TV, to the TV with a soundbar or AV
+   receiver on the ARC port, or to a soundbar or AV receiver.
+2. Stops `couchlink.service` if it is running, since only one program can use
+   the CEC adapter at a time. It starts it again at the end.
+3. Asks every HDMI device who it is. This finds the Pi and the soundbar or
+   receiver.
+4. Listens while you switch to the PC with the remote. The PC usually doesn't
+   speak CEC, so this is how its input is found. If it hears nothing, it asks
+   which input number the PC is plugged into.
+5. Offers to switch the TV to another input, such as a streaming box, when the
+   PC goes to sleep by itself (`on_pc_sleep = "switch"`).
+6. Saves `pc_addresses`, `pi_address`, `soundbar_address` and the sleep input,
+   keeping the previous file as `config.toml.bak`.
+
+### By hand
+
 **Step 1: scan the bus.**
 
 ```bash
@@ -50,20 +76,29 @@ use the CEC adapter at a time.
 
 The installer creates `/etc/couchlink/config.toml`.
 
-### The PC's settings
+### The settings
 
-The settings that don't need CEC addresses can be filled in by answering a
-few questions. The installer offers this at the end of a first install. To run
-it again at any time:
+Everything except the CEC addresses can be filled in by answering a few
+questions. The installer asks them at the end of a first install. To run them
+again at any time:
 
 ```bash
-sudo couchlink --setup
+sudo bash install.sh --setup
 ```
 
-It asks for the PC's IP address, finds the PC's MAC address for you, asks for
-the SSH user and what to do when the PC goes to sleep by itself, and offers to
-set up the SSH key (step 5 of [Preparing the PC](preparing-the-pc.md)). It
-keeps the comments in the file and saves the previous version as
+`sudo couchlink --setup` does the same. It asks for:
+
+- the PC's IP address, and finds the PC's MAC address for you
+- the SSH user
+- a name for the PC on the status page
+- what to do when the PC wakes by itself, for example from a controller
+- what to do when the PC goes to sleep by itself
+- whether to make an [API key](status-page-and-logs.md#wake-and-sleep-buttons)
+  for the wake and sleep buttons
+
+Then it offers to set up the SSH key (step 5 of
+[Preparing the PC](preparing-the-pc.md)). Press Enter to keep the value in
+brackets. It keeps the comments in the file and saves the previous version as
 `config.toml.bak`.
 
 ### Updating an older config

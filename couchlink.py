@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-CouchLink 2.5.1
+CouchLink 2.5.2
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -49,7 +49,7 @@ except ModuleNotFoundError:          # Python < 3.11
     except ModuleNotFoundError:
         tomllib = None
 
-VERSION = "2.5.1"
+VERSION = "2.5.2"
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 EX_CONFIG = 78
 
@@ -1421,7 +1421,7 @@ footer a { color: var(--muted); }
 
   <section class="panel hero" aria-live="polite">
     <div class="orb">
-      <svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+      <svg viewBox="0 4 64 64" fill="none" aria-hidden="true">
         <path d="M18 20h28c6.5 0 10.5 5 11.6 12.4l1.8 12.2c.6 4.3-2.3 7.4-6.2 7.4-2.6 0-4.4-1.4-5.8-3.5L44 43H20l-3.4 5.5C15.2 50.6 13.4 52 10.8 52c-3.9 0-6.8-3.1-6.2-7.4l1.8-12.2C7.5 25 11.5 20 18 20z" stroke="currentColor" stroke-width="3" stroke-linejoin="round"/>
         <path d="M17 28v9M12.5 32.5h9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
         <circle cx="44" cy="29" r="2.6" fill="currentColor"/><circle cx="49.5" cy="35" r="2.6" fill="currentColor"/>

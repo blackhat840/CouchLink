@@ -28,10 +28,13 @@ Run with --help for options. See README.md and docs/ for setup.
 """
 import argparse
 import difflib
+import hashlib
+import hmac
 import json
 import os
 import queue
 import re
+import secrets
 import socket
 import subprocess
 import sys
@@ -87,7 +90,7 @@ DEFAULTS = {
     "hid_passthrough": True,
     "hidg_device": "/dev/hidg0",
     "dashboard_port": 8080,             # 0 disables the status page
-    "allow_actions": False,             # wake and sleep buttons on the status page, and the POST API behind them
+    "api_key_hash": "",                 # set by "sudo couchlink --new-api-key". Turns on the wake and sleep API
 
     # timing (seconds)
     "away_debounce": 5,
@@ -247,8 +250,8 @@ def validate(settings):
         if s[key] and s[key] in norm_pcs:
             problems.append(f"{key} {s[key]} is also listed in pc_addresses. If the PC is "
                             "behind the soundbar, leave soundbar_address unset")
-    if not isinstance(s["allow_actions"], bool):
-        problems.append("allow_actions must be true or false")
+    if s["api_key_hash"] and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(s["api_key_hash"])):
+        problems.append("api_key_hash is not valid. Make a new key with: sudo couchlink --new-api-key")
     if not isinstance(s["watch_pc_power"], bool):
         problems.append("watch_pc_power must be true or false")
     if s["select_soundbar_audio"] and not s["soundbar_pc_audio_address"]:
@@ -1068,7 +1071,7 @@ class Controller:
             "on_pc_sleep_target": (self.input_name(self.cfg.pc_sleep_switch_to)
                                    if self.cfg.pc_sleep_switch_to else None),
             "power_poll_interval": self.cfg.power_poll_interval,
-            "actions_allowed": self.cfg.allow_actions,
+            "actions_enabled": bool(self.cfg.api_key_hash),
             "remote_session_seconds_left": (int(self.session_until - t) if self.session_active() else None),
             "last_wol_seconds_ago": int(t - self.last_wol) if self.last_wol is not None else None,
             "last_suspend_seconds_ago": int(t - self.last_suspend) if self.last_suspend is not None else None,
@@ -1427,6 +1430,20 @@ body.stale .hero, body.stale .grid, body.stale .console, body.stale .controls { 
 .btn[hidden] { display: none; }
 .note { color: var(--muted); font-size: 14px; }
 .note code { font: 13px var(--mono); color: var(--text); }
+.keyform { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.keyform[hidden] { display: none; }
+.keyform label { color: var(--muted); font-size: 14px; }
+.keyform input {
+  min-height: 44px; width: 18rem; max-width: 100%; padding: 0 12px; border-radius: 10px;
+  font: 14px var(--mono); color: var(--text); background: rgba(8, 12, 20, 0.6); border: 1px solid var(--panel-edge);
+}
+.keyform input:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.forget {
+  appearance: none; border: 0; background: none; cursor: pointer; padding: 0; min-height: 44px;
+  font: 13px var(--sans); color: var(--muted); text-decoration: underline;
+}
+.forget[hidden] { display: none; }
+.forget:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 
 /* panels */
 .panel {
@@ -1621,7 +1638,13 @@ footer a { color: var(--muted); }
       <button class="btn" type="button" id="bEnd">End remote session</button>
       <button class="btn" type="button" id="bSleep">Put PC to sleep</button>
     </div>
+    <form class="keyform" id="keyForm" hidden>
+      <label for="keyIn">API key</label>
+      <input id="keyIn" type="password" autocomplete="current-password" spellcheck="false">
+      <button class="btn" type="submit">Save on this device</button>
+    </form>
     <div class="note" id="ctlNote" role="status"></div>
+    <button class="forget" type="button" id="bForget" hidden>Forget the key on this device</button>
   </section>
 
   <section class="grid">
@@ -1804,14 +1827,24 @@ footer a { color: var(--muted); }
 
   // Wake and sleep buttons. Each shows only when it would do something.
   var noteUntil = 0;
+  var KEY = "couchlink-api-key", memKey = "";
+  function getKey() {
+    try { return window.localStorage.getItem(KEY) || ""; } catch (e) { return memKey; }
+  }
+  function setKey(k) {
+    memKey = k;
+    try { if (k) window.localStorage.setItem(KEY, k); else window.localStorage.removeItem(KEY); } catch (e) {}
+  }
   function note(text, hold) {
     put("ctlNote", text);
     noteUntil = hold ? Date.now() + 8000 : 0;
   }
   function controls(d) {
     $("controls").hidden = false;
-    var allowed = !!d.actions_allowed;
-    $("buttons").hidden = !allowed;
+    var allowed = !!d.actions_enabled, hasKey = !!getKey();
+    $("buttons").hidden = !allowed || !hasKey;
+    $("keyForm").hidden = !allowed || hasKey;
+    $("bForget").hidden = !allowed || !hasKey;
     var onPc = d.pc_should_be === "awake";
     var session = d.remote_session_seconds_left !== null && d.remote_session_seconds_left !== undefined;
     $("bWake").hidden = !allowed || onPc || session;
@@ -1821,8 +1854,10 @@ footer a { color: var(--muted); }
     if (Date.now() < noteUntil) return;
     if (!allowed) {
       if (!$("ctlNote").querySelector("code")) {
-        $("ctlNote").innerHTML = "Wake and sleep buttons are off. Turn them on with <code>allow_actions = true</code> in the config.";
+        $("ctlNote").innerHTML = "Wake and sleep buttons are off. Turn them on by making an API key: <code>sudo couchlink --new-api-key</code>";
       }
+    } else if (!hasKey) {
+      note("Enter the API key to use the wake and sleep buttons here.");
     } else {
       note(d.dry_run ? "Dry run: the buttons only log what they would do." :
            session ? "The PC stays awake without the TV until the session ends." : "");
@@ -1831,15 +1866,30 @@ footer a { color: var(--muted); }
   function act(btn, path, body, ask) {
     if (ask && !window.confirm(ask)) return;
     btn.disabled = true;
-    fetch(path, { method: "POST", cache: "no-store",
-                  headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) })
+    fetch(path, { method: "POST", cache: "no-store", body: JSON.stringify(body || {}),
+                  headers: { "Content-Type": "application/json", "Authorization": "Bearer " + getKey() } })
       .then(function (r) {
+        if (r.status === 401) setKey("");       // ask for it again
         return r.json().catch(function () { return { message: "CouchLink answered " + r.status }; });
       })
       .then(function (j) { note(j.message || "Done", true); })
       .catch(function () { note("Could not reach CouchLink", true); })
       .then(function () { btn.disabled = false; poll(); });
   }
+  $("keyForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var k = $("keyIn").value.trim();
+    if (!k) return;
+    setKey(k);
+    $("keyIn").value = "";
+    note("Key saved on this device.", true);
+    if (last) controls(last);
+  });
+  $("bForget").addEventListener("click", function () {
+    setKey("");
+    note("Key removed from this device.", true);
+    if (last) controls(last);
+  });
   $("bWake").addEventListener("click", function () { act(this, "/api/wake", { tv: false }); });
   $("bWakeTv").addEventListener("click", function () { act(this, "/api/wake", { tv: true }); });
   $("bEnd").addEventListener("click", function () { act(this, "/api/session/end"); });
@@ -1951,11 +2001,41 @@ def status_page_urls(port, ip, hostname):
     return urls or [f"http://<pi-address>:{port}"]
 
 
+def hash_api_key(key):
+    """What the config stores instead of the key itself."""
+    return "sha256:" + hashlib.sha256(key.encode()).hexdigest()
+
+
+def bearer_key(headers):
+    """The key from an "Authorization: Bearer <key>" header, or None."""
+    value = headers.get("Authorization") or ""
+    scheme, _, key = value.partition(" ")
+    return key.strip() if scheme.lower() == "bearer" and key.strip() else None
+
+
+class KeyGuard:
+    """Locks out an address for a minute after 5 wrong API keys within a minute."""
+    LIMIT, WINDOW = 5, 60
+
+    def __init__(self, clock=time.monotonic):
+        self.clock = clock
+        self.lock = threading.Lock()
+        self.failures = {}
+
+    def locked(self, source):
+        with self.lock:
+            t = self.clock()
+            recent = [x for x in self.failures.get(source, []) if t - x < self.WINDOW]
+            self.failures[source] = recent
+            return len(recent) >= self.LIMIT
+
+    def failed(self, source):
+        with self.lock:
+            self.failures.setdefault(source, []).append(self.clock())
+
+
 def request_problem(headers):
-    """Why a POST to the API is refused, or None. Stops other web sites from sending actions:
-    a browser can only send a JSON body cross-site after asking first, and CouchLink never agrees."""
-    if (headers.get("Content-Type") or "").split(";")[0].strip().lower() != "application/json":
-        return "Send the request as JSON (Content-Type: application/json)"
+    """Why a POST to the API is refused, or None. Refuses requests a browser sends from another web site."""
     origin = headers.get("Origin")
     if origin and origin != "null":
         host = origin.split("://", 1)[-1].rstrip("/")
@@ -1971,6 +2051,7 @@ def request_problem(headers):
 def start_dashboard(port, controller, events=None):
     """Serve the status page and /api. Returns the server, or None if the port is taken."""
     page = DASHBOARD_HTML.encode()
+    guard = KeyGuard()
 
     class Handler(BaseHTTPRequestHandler):
         def answer(self, status, ok, result, message):
@@ -1987,9 +2068,19 @@ def start_dashboard(port, controller, events=None):
             source = self.client_address[0]
             if name is None:
                 return self.answer(404, False, "not_found", "No such action")
-            if not controller.cfg.allow_actions or events is None:
+            stored = controller.cfg.api_key_hash
+            if not stored or events is None:
                 return self.answer(403, False, "actions_off",
-                                   "Actions are turned off. Set allow_actions = true in the config to use them")
+                                   "Actions are off. Make an API key with: sudo couchlink --new-api-key")
+            if guard.locked(source):
+                return self.answer(429, False, "locked_out", "Too many wrong API keys. Try again in a minute")
+            key = bearer_key(self.headers)
+            if key is None or not hmac.compare_digest(hash_api_key(key), stored):
+                guard.failed(source)
+                log("ACTION", f"{'Wrong' if key else 'Missing'} API key from {source} for {self.path}",
+                    level="WARN")
+                return self.answer(401, False, "bad_key", "Wrong API key" if key else
+                                   "Send the API key as: Authorization: Bearer <key>")
             problem = request_problem(self.headers)
             if problem:
                 log("ACTION", f"Refused a request from {source} to {self.path}: {problem}", level="WARN")
@@ -2042,9 +2133,8 @@ def start_dashboard(port, controller, events=None):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     urls = status_page_urls(port, own_address(controller.cfg.pc_host), socket.gethostname())
     log("STARTUP", f"Status page on {' or '.join(urls)}")
-    if controller.cfg.allow_actions:
-        log("STARTUP", "Wake and sleep buttons are on (allow_actions). The status page has no login, "
-                       "so keep it on a network you trust", level="WARN")
+    if controller.cfg.api_key_hash:
+        log("STARTUP", "Wake and sleep buttons and the API are on. Requests need the API key")
     return server
 
 
@@ -2073,6 +2163,31 @@ def set_config_value(text, key, value):
         column = m.start(4) - m.start() + len(comment) - len(comment.lstrip())
         line = line.ljust(column - 1) + " " + comment.lstrip()
     return text[:m.start()] + line + text[m.end():]
+
+
+def new_api_key(path, out=print):
+    """Make a new API key, save its hash to the config and show the key once."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        out(f"{path} not found. Run the installer first.")
+        return 1
+    key = secrets.token_urlsafe(24)
+    try:
+        with open(path, "w") as f:
+            f.write(set_config_value(text, "api_key_hash", hash_api_key(key)))
+    except PermissionError:
+        out(f"Can't write {path}. Run it with sudo: sudo couchlink --new-api-key")
+        return 1
+    out(f"New API key: {key}")
+    out("")
+    out(f"Copy it now. Only a hash of it is saved in {path}, so it can't be shown again.")
+    out("Running this again makes a new key and the old one stops working.")
+    out("Restart CouchLink to use it: sudo systemctl restart couchlink")
+    out("The status page asks for it once on each device. Scripts send it as:")
+    out("  Authorization: Bearer <key>")
+    return 0
 
 
 def find_mac(host):
@@ -2353,7 +2468,11 @@ def main(argv=None):
     ap.add_argument("--migrate-config", action="store_true",
                     help="bring a config from an older version up to date, explaining each change "
                          "(with --dry-run, only show the changes)")
+    ap.add_argument("--new-api-key", action="store_true",
+                    help="make a key for the wake and sleep buttons and API, replacing any old one")
     args = ap.parse_args(argv)
+    if args.new_api_key:
+        sys.exit(new_api_key(args.config))
     if args.migrate_config:
         sys.exit(migrate_config(args.config, dry_run=args.dry_run))
     if args.setup:

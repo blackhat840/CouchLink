@@ -44,7 +44,7 @@ verify_non_tv_standby = true
 watch_pc_power = true                # hear whether the PC sleeps, restarts or shuts down
 hid_passthrough = true               # needs the installer's --with-hid option
 dashboard_port = 8080                # status page, 0 turns it off
-allow_actions = false                # wake and sleep buttons on the status page, no login yet
+# api_key_hash = ""                 # set by: sudo couchlink --new-api-key (turns on the wake and sleep API)
 
 [timing]
 away_debounce = 5                    # seconds off the PC's input before suspending

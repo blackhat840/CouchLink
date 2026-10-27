@@ -40,17 +40,20 @@ login, so keep the page on a trusted network.
 
 ## Wake and sleep buttons
 
-The status page can wake the PC and put it to sleep. The buttons are off by
-default. To turn them on, set this in `/etc/couchlink/config.toml` and restart
-CouchLink:
+The status page can wake the PC and put it to sleep. The buttons and the API
+behind them need an API key, and are off until you make one:
 
-```toml
-[behavior]
-allow_actions = true
+```bash
+sudo couchlink --new-api-key
+sudo systemctl restart couchlink
 ```
 
-There is no login yet, so anyone who can open the status page can use them.
-Only turn them on if the Pi is on a network you trust.
+It prints the key once. Copy it somewhere safe, such as a password manager.
+Only a hash of the key is saved in the config, so it can't be shown again.
+Running the command again makes a new key, and the old one stops working.
+
+The status page asks for the key once on each phone or computer and
+remembers it there. "Forget the key on this device" removes it.
 
 Each button shows only when it would do something:
 
@@ -65,8 +68,8 @@ In a dry run, the buttons only log what they would do.
 
 ## API
 
-The buttons use these requests, and scripts, phone shortcuts and Home
-Assistant can use them too. They need `allow_actions = true`.
+The buttons use these requests. Scripts, phone shortcuts and Home Assistant
+can use them too.
 
 | Request | Does |
 |---|---|
@@ -75,10 +78,11 @@ Assistant can use them too. They need `allow_actions = true`.
 | `POST /api/sleep` | Put PC to sleep |
 | `POST /api/session/end` | End remote session |
 
-Send a JSON body, even an empty `{}`, with `Content-Type: application/json`:
+Send the key in an `Authorization` header. The body is optional, and when there
+is one it must be a JSON object:
 
 ```bash
-curl -X POST -H "Content-Type: application/json" -d '{"tv": false}' http://<pi>:8080/api/wake
+curl -X POST -H "Authorization: Bearer <key>" -d '{"tv": false}' http://<pi>:8080/api/wake
 ```
 
 Each answer is JSON, such as:
@@ -96,12 +100,18 @@ Each answer is JSON, such as:
 | `already_asleep` | The PC is not reachable, so nothing was sent |
 | `session_ended`, `no_session` | The session ended, or none was running |
 | `too_soon` | HTTP 429. Only one wake, and one sleep, is accepted every 10 seconds |
-| `actions_off` | HTTP 403. `allow_actions` is off |
-| `refused` | HTTP 403. The request came from another web site, or was not JSON |
+| `bad_key` | HTTP 401. The key is missing or wrong |
+| `locked_out` | HTTP 429. 5 wrong keys from one address lock it out for a minute |
+| `actions_off` | HTTP 403. No API key has been made yet |
+| `refused` | HTTP 403. The request came from a page on another web site |
 
-`GET /api` only reads. Requests from other web sites are refused, so a page
-elsewhere can't wake the PC from your browser. Every request is logged with
-the address it came from, for example `[ACTION] Wake PC requested from 192.168.1.20`.
+`GET /api` only reads, and needs no key. Every request is logged with the
+address it came from, for example `[ACTION] Wake PC requested from 192.168.1.20`.
+Wrong keys are logged as warnings.
+
+CouchLink serves plain HTTP, so the key crosses the network unencrypted. On a
+home network that is usually fine. To reach the Pi from outside the home, use a
+VPN or a reverse proxy that adds HTTPS.
 
 ## Logs
 

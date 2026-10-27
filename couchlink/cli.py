@@ -17,8 +17,17 @@ from .config import load_config, migrate_config, validate
 from .controller import Controller
 from .power import pinger, power_watcher
 from .setup_cec import run_cec_setup
-from .setup_pc import new_api_key, run_setup
+from .setup_pc import new_api_key, run_setup, set_admin_password
 from .web import start_dashboard
+
+
+def restart(why, cec):
+    """Start CouchLink again in this process, with the same command line, to use new settings.
+    Works the same under systemd and in a terminal."""
+    log("STARTUP", f"Restarting, because {why}")
+    cec.stop()      # free the CEC adapter for the new CouchLink
+    sys.stdout.flush()
+    os.execv(sys.executable, sys.orig_argv)
 
 
 def main(argv=None):
@@ -34,11 +43,15 @@ def main(argv=None):
                          "(with --dry-run, only show the changes)")
     ap.add_argument("--setup-cec", action="store_true",
                     help="find the CEC addresses with the TV on and save them")
-    ap.add_argument("--new-api-key", action="store_true",
-                    help="generate a key for scripts to use the API, replacing any old one")
+    ap.add_argument("--new-api-key", nargs="?", const="default", metavar="NAME",
+                    help="generate a key for scripts to use the API, such as --new-api-key home-assistant. "
+                         "A key with the same name is replaced")
+    ap.add_argument("--admin-password", action="store_true", help="set the settings page's password")
     args = ap.parse_args(argv)
     if args.new_api_key:
-        sys.exit(new_api_key(args.config))
+        sys.exit(new_api_key(args.config, args.new_api_key))
+    if args.admin_password:
+        sys.exit(set_admin_password(args.config))
     if args.setup_cec:
         if os.geteuid() != 0:
             print("Run it with sudo: sudo couchlink --setup-cec")
@@ -84,7 +97,7 @@ def main(argv=None):
     if cfg.watch_pc_power:
         threading.Thread(target=power_watcher, args=(cfg, events), daemon=True).start()
     if cfg.dashboard_port:
-        start_dashboard(cfg.dashboard_port, ctl, events)
+        start_dashboard(cfg.dashboard_port, ctl, events, args.config)
 
     last_tick = 0.0
     while True:
@@ -93,6 +106,8 @@ def main(argv=None):
         except queue.Empty:
             event = None
         if event is not None:
+            if event[0] == "restart":
+                restart(event[1], cec)
             if event[0] == "cec_exit":
                 log("STARTUP", f"cec-client exited with code {event[1]}. Exiting so systemd restarts CouchLink",
                     level="ERROR")

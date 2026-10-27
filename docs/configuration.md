@@ -95,7 +95,8 @@ sudo bash install.sh --setup
 - what to do when the PC goes to sleep by itself
 - whether to show the [wake and sleep buttons](status-page-and-logs.md#wake-and-sleep-buttons)
   on the status page
-- whether to generate an [API key](status-page-and-logs.md#api) for scripts
+- a password for the [settings page](status-page-and-logs.md#settings-page)
+- whether to generate an [API key](status-page-and-logs.md#api), with a name, for scripts
   and Home Assistant
 
 Then it offers to set up the SSH key (step 5 of
@@ -128,6 +129,24 @@ It explains every change it makes:
 
 Things only you can fill in, such as the CEC addresses, are listed at the end.
 The previous version of the file is saved as `config.toml.bak`.
+
+The [settings page](status-page-and-logs.md#settings-page) changes the most
+common settings from a browser.
+
+### API keys
+
+Keys for scripts and Home Assistant are in their own table at the end of the
+file, one per line, with only a hash of each key:
+
+```toml
+[api_keys]
+home-assistant = "sha256:..."
+phone = "sha256:..."
+```
+
+Generate and revoke them on the settings page, or generate one with
+`sudo couchlink --new-api-key NAME`. A config from 2.6 with `api_key_hash`
+keeps working, and the next update moves that key here as `default`.
 
 ### Editing the file
 
@@ -215,7 +234,7 @@ seconds.
 | `hidg_device` | `"/dev/hidg0"` | The USB keyboard device. |
 | `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
 | `status_page_buttons` | `true` | Wake and sleep buttons on the status page. They need no key, so anyone who can open the page can use them. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
-| `api_key_hash` | unset | Set by `sudo couchlink --new-api-key`. Lets scripts and Home Assistant use the API, and holds a hash of the key they send. See [API](status-page-and-logs.md#api). |
+| `admin_password_hash` | unset | The settings page's password, as a salted hash. Set it with `sudo couchlink --admin-password`. See [Settings page](status-page-and-logs.md#settings-page). |
 
 ### Timing
 

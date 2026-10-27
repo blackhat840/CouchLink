@@ -219,6 +219,17 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("Run without --local to download it", out)
         self.assertIsNone(self.stub_ran())
 
+    def test_update_moves_the_old_api_key(self):
+        conf = os.path.join(self.root, "etc/couchlink/config.toml")
+        old = "sha256:" + "a" * 64
+        with open(conf, "a") as f:
+            f.write(f'api_key_hash = "{old}"\n')
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        self.assertIn("Moved api_key_hash to [api_keys] as the key named default", out)
+        settings, problems = config.load_config(conf)
+        self.assertEqual((problems, settings["api_keys"]), ([], {"default": old}))
+
     def test_update_brings_an_old_config_up_to_date(self):
         conf = os.path.join(self.root, "etc/couchlink/config.toml")
         with open(conf, "w") as f:
@@ -231,6 +242,8 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn("config.example.toml\n", out.split("Updated")[-1])
         with open(conf + ".bak") as f:
             self.assertEqual(f.read(), OLD_CONFIG)
+        for path in (conf, conf + ".bak"):                       # it holds password and key hashes
+            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600, path)
         with open(conf) as f:
             self.assertIn("watch_pc_power = true", f.read())
 

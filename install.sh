@@ -323,7 +323,7 @@ if [ "$UPDATE" = 1 ]; then
     say "Checking your config against the new version"
     # Bring a copy up to date. Yours is only replaced once the new version is installed.
     MIGRATED="$LOG_DIR/couchlink-migrated.toml"
-    cp "$CONF" "$MIGRATED"
+    install -m 0600 "$CONF" "$MIGRATED"
     new_couchlink --config "$MIGRATED" --migrate-config \
         | sed "s|$MIGRATED|your config|g" \
         || die "Couldn't bring your config up to date, so nothing was changed."
@@ -357,18 +357,22 @@ chmod 0755 "$BIN.new"
 mv "$BIN.new" "$BIN"
 echo "Installed $LIB (${NEW_VER:-unknown version}) and the couchlink command"
 
+# The config holds the settings page's password hash and the API key hashes, so only
+# root can read it.
 if [ -n "$MIGRATED" ] && ! cmp -s "$MIGRATED" "$CONF"; then
-    cp "$CONF" "$CONF.bak"
-    install -m 0644 "$MIGRATED" "$CONF"
+    install -m 0600 "$CONF" "$CONF.bak"
+    install -m 0600 "$MIGRATED" "$CONF"
     echo "Brought $CONF up to date (the previous version is in $CONF.bak)"
     CONFIG_UPDATED=1
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
 elif [ -f "$CONF" ]; then
+    chmod 0600 "$CONF"
+    [ ! -f "$CONF.bak" ] || chmod 0600 "$CONF.bak"
     echo "Kept your existing $CONF"
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
     echo "Latest example saved as $CONF_DIR/config.example.toml for comparison"
 else
-    install -m 0644 "$HERE/couchlink.example.toml" "$CONF"
+    install -m 0600 "$HERE/couchlink.example.toml" "$CONF"
     echo "Created $CONF from the example"
 fi
 [ -z "$MIGRATED" ] || rm -f "$MIGRATED"

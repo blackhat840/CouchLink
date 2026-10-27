@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#070a12">
+<title>Settings | CouchLink</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body data-state="unknown" class="admin">
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="48" y2="48"><stop offset="0" stop-color="#22d3ee"/><stop offset=".6" stop-color="#a78bfa"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs>
+        <rect x="3" y="9" width="42" height="27" rx="5" stroke="url(#g)" stroke-width="3"/>
+        <path d="M17 42h14" stroke="url(#g)" stroke-width="3" stroke-linecap="round"/>
+        <path d="M15 22.5h6M18 19.5v6" stroke="url(#g)" stroke-width="2.6" stroke-linecap="round"/>
+        <circle cx="29" cy="21" r="1.9" fill="url(#g)"/><circle cx="33.5" cy="25" r="1.9" fill="url(#g)"/>
+      </svg>
+      <span class="word">CouchLink</span>
+    </div>
+    <span class="chip">Settings</span>
+    <span class="spacer"></span>
+    <a class="back" href="/">Status page</a>
+    <button class="linkish" type="button" id="logout" hidden>Log out</button>
+  </header>
+
+  <section class="panel form-panel" id="message" hidden>
+    <p id="messageText"></p>
+  </section>
+
+  <section class="panel form-panel" id="login" hidden>
+    <h1>Log in</h1>
+    <form id="loginForm" class="stack">
+      <label for="password">Password for the settings page</label>
+      <input id="password" type="password" autocomplete="current-password" required>
+      <div class="row">
+        <button class="btn primary" type="submit">Log in</button>
+        <span class="note" id="loginNote" role="status"></span>
+      </div>
+    </form>
+  </section>
+
+  <div id="panels" hidden>
+    <section class="panel form-panel">
+      <h1>Settings</h1>
+      <p class="note">Saving checks the values, keeps the comments in the config file, and restarts
+        CouchLink to use them. Other settings are in <code>/etc/couchlink/config.toml</code>.</p>
+      <form id="settings" class="stack"></form>
+      <div class="row">
+        <button class="btn primary" type="submit" form="settings" id="save">Save and restart</button>
+        <span class="note" id="saveNote" role="status"></span>
+      </div>
+      <ul class="problems" id="problems" hidden></ul>
+    </section>
+
+    <section class="panel form-panel">
+      <h1>API keys</h1>
+      <p class="note">Scripts, phone shortcuts and Home Assistant send a key to wake the PC and put
+        it to sleep. Give each one its own key, so you can revoke one without touching the others.
+        The status page's buttons don't need one.</p>
+      <ul class="keys" id="keys"></ul>
+      <form id="newKey" class="row">
+        <label class="sr" for="keyName">Name for a new key</label>
+        <input id="keyName" placeholder="home-assistant" autocomplete="off" spellcheck="false" required>
+        <button class="btn" type="submit">Generate key</button>
+      </form>
+      <div class="newkey" id="newKeyBox" hidden>
+        <p>New key <strong id="newKeyName"></strong>. Copy it now. It can't be shown again.</p>
+        <div class="row"><code id="newKeyValue"></code><button class="btn" type="button" id="copyKey">Copy</button></div>
+      </div>
+      <span class="note" id="keyNote" role="status"></span>
+    </section>
+
+    <section class="panel form-panel">
+      <h1>Password</h1>
+      <form id="passwordForm" class="stack">
+        <label for="current">Current password</label>
+        <input id="current" type="password" autocomplete="current-password" required>
+        <label for="newPassword">New password, at least 8 characters</label>
+        <input id="newPassword" type="password" autocomplete="new-password" minlength="8" required>
+        <div class="row">
+          <button class="btn" type="submit">Change password</button>
+          <span class="note" id="passwordNote" role="status"></span>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <footer>
+    <a href="/">Status page</a>
+    <a href="https://github.com/blackhat840/CouchLink/blob/main/docs/status-page-and-logs.md#settings-page" target="_blank" rel="noopener">Help</a>
+  </footer>
+</div>
+
+<script src="/admin.js"></script>
+</body>
+</html>

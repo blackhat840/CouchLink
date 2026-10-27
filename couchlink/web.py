@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The status page and its API."""
 
-import hmac
 import json
 import os
 import queue
@@ -9,7 +8,8 @@ import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from .auth import KeyGuard, bearer_key, hash_api_key
+from .admin import Admin
+from .auth import KeyGuard, bearer_key, find_api_key
 from .common import log
 
 
@@ -19,7 +19,8 @@ POST_ACTIONS = {"/api/wake": "wake", "/api/sleep": "sleep", "/api/session/end": 
 # access. It polls /api every 2 seconds.
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 STATIC_PATHS = {"/": "status.html", "/index.html": "status.html", "/style.css": "style.css",
-                "/status.js": "status.js"}
+                "/status.js": "status.js", "/admin": "admin.html", "/admin/": "admin.html",
+                "/admin.js": "admin.js"}
 CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
                  ".js": "text/javascript; charset=utf-8"}
 
@@ -75,24 +76,61 @@ def request_problem(headers):
     return None
 
 
-def start_dashboard(port, controller, events=None):
-    """Serve the status page and /api. Returns the server, or None if the port is taken."""
+def start_dashboard(port, controller, events=None, config_path=None):
+    """Serve the status page, /api and the settings page. Returns the server, or None if the
+    port is taken."""
     files = load_static()
     guard = KeyGuard()
+    admin = Admin(controller, events, config_path, guard)
 
     class Handler(BaseHTTPRequestHandler):
-        def answer(self, status, ok, result, message):
-            body = json.dumps({"ok": ok, "result": result, "message": message}).encode()
+        def send_json(self, status, payload, headers=()):
+            body = json.dumps(payload).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
+            for name, value in headers:
+                self.send_header(name, value)
             self.end_headers()
             self.wfile.write(body)
 
+        def answer(self, status, ok, result, message):
+            self.send_json(status, {"ok": ok, "result": result, "message": message})
+
+        def read_json(self):
+            """The request body as a dict, or None."""
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                return None
+            if not 0 <= length <= 16384:
+                return None
+            try:
+                params = json.loads(self.rfile.read(length) or b"{}")
+            except ValueError:
+                return None
+            return params if isinstance(params, dict) else None
+
         def do_POST(self):
-            name = POST_ACTIONS.get(self.path)
             source = self.client_address[0]
+            path = self.path.split("?")[0]
+            if path.startswith("/admin/"):
+                params = self.read_json()
+                if params is None:
+                    return self.answer(400, False, "bad_request", "The body must be a JSON object, such as {}")
+                after = None
+                if not from_status_page(self.headers):
+                    # Only the settings page itself, so another web site can't use your login
+                    status, payload, headers = 403, {"ok": False, "result": "refused",
+                                                     "message": "Use the settings page"}, ()
+                else:
+                    status, payload, headers, after = admin.post(path, params, self.headers, source)
+                self.send_json(status, payload, headers)
+                if after:
+                    after()
+                return
+            name = POST_ACTIONS.get(path)
             if name is None:
                 return self.answer(404, False, "not_found", "No such action")
             if events is None:
@@ -101,37 +139,30 @@ def start_dashboard(port, controller, events=None):
             if problem:
                 log("ACTION", f"Refused a request from {source} to {self.path}: {problem}", level="WARN")
                 return self.answer(403, False, "refused", problem)
-            stored = controller.cfg.api_key_hash
+            keys = controller.cfg.api_keys
             if from_status_page(self.headers):
                 # The status page's buttons need no key. The network is what protects them.
                 if not controller.cfg.status_page_buttons:
                     return self.answer(403, False, "buttons_off",
                                        "The status page buttons are off (status_page_buttons = false)")
                 source += " (status page)"
-            elif not stored:
+            elif not keys:
                 return self.answer(403, False, "actions_off",
                                    "Scripts need an API key. Generate one with: sudo couchlink --new-api-key")
             else:
                 if guard.locked(source):
                     return self.answer(429, False, "locked_out", "Too many wrong API keys. Try again in a minute")
                 key = bearer_key(self.headers)
-                if key is None or not hmac.compare_digest(hash_api_key(key), stored):
+                key_name = find_api_key(key, keys)
+                if key_name is None:
                     guard.failed(source)
                     log("ACTION", f"{'Wrong' if key else 'Missing'} API key from {source} for {self.path}",
                         level="WARN")
                     return self.answer(401, False, "bad_key", "Wrong API key" if key else
                                        "Send the API key as: Authorization: Bearer <key>")
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = -1
-            if not 0 <= length <= 4096:
-                return self.answer(400, False, "bad_request", "The request body is too large")
-            try:
-                params = json.loads(self.rfile.read(length) or b"{}")
-            except ValueError:
-                params = None
-            if not isinstance(params, dict):
+                source += f" (key {key_name})"
+            params = self.read_json()
+            if params is None:
                 return self.answer(400, False, "bad_request", "The body must be a JSON object, such as {}")
             reply = queue.Queue()
             events.put(("action", name, params, source, reply))
@@ -142,11 +173,15 @@ def start_dashboard(port, controller, events=None):
             self.answer(200 if ok else 429 if result == "too_soon" else 400, ok, result, message)
 
         def do_GET(self):
-            if self.path.startswith("/api"):
+            path = self.path.split("?")[0]
+            if path == "/admin/api/state":
+                status, payload = admin.state(self.headers)
+                return self.send_json(status, payload)
+            if path.startswith("/api"):
                 body = json.dumps(controller.snapshot(), indent=2).encode()
                 ctype = "application/json"
-            elif self.path.split("?")[0] in STATIC_PATHS:
-                body, ctype = files[STATIC_PATHS[self.path.split("?")[0]]]
+            elif path in STATIC_PATHS:
+                body, ctype = files[STATIC_PATHS[path]]
             else:
                 self.send_error(404)
                 return
@@ -168,6 +203,7 @@ def start_dashboard(port, controller, events=None):
     threading.Thread(target=server.serve_forever, daemon=True).start()
     urls = status_page_urls(port, own_address(controller.cfg.pc_host), socket.gethostname())
     log("STARTUP", f"Status page on {' or '.join(urls)}")
-    if controller.cfg.api_key_hash:
-        log("STARTUP", "The API is on for scripts. They need the API key")
+    if controller.cfg.api_keys:
+        names = ", ".join(sorted(controller.cfg.api_keys))
+        log("STARTUP", f"The API is on for scripts, with these keys: {names}")
     return server

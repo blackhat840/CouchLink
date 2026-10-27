@@ -20,8 +20,10 @@ is installed on the PC.
   input, turn it off, or leave it alone.
 - **Remote play.** Wake the PC from the status page and keep it awake without
   the TV, for streaming to a Steam Deck or phone with Steam Link or Moonlight.
-- **Wake and sleep buttons** on the status page, and an API with a key for
-  scripts, phone shortcuts and Home Assistant.
+- **Wake and sleep buttons** on the status page, and an API with named keys
+  for scripts, phone shortcuts and Home Assistant.
+- **A settings page** with a password, to change settings and API keys from a
+  browser.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
 - **Optional:** forwards TV remote buttons to the PC as a USB keyboard.

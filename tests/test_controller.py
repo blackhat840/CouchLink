@@ -971,11 +971,13 @@ class ActionTests(unittest.TestCase):
         s.ev(("action", "wake", {"tv": False}, "192.168.1.20", q))
         self.assertEqual(q.get_nowait()[:2], (True, "session_started"))
 
-    def test_api_key_hash_setting(self):
-        self.assertEqual(config.DEFAULTS["api_key_hash"], "")      # off by default
-        _, problems = config.validate(dict(BASE, api_key_hash="hunter2"))
-        self.assertTrue(any("api_key_hash" in p for p in problems))   # a plain key is refused
-        _, problems = config.validate(dict(BASE, api_key_hash=auth.hash_api_key("k")))
+    def test_api_keys_setting(self):
+        self.assertEqual(config.DEFAULTS["api_keys"], {})          # off by default
+        _, problems = config.validate(dict(BASE, api_keys={"home-assistant": "hunter2"}))
+        self.assertTrue(any("home-assistant" in p for p in problems))  # a plain key is refused
+        _, problems = config.validate(dict(BASE, api_keys={"bad name!": auth.hash_api_key("k")}))
+        self.assertTrue(any("bad name!" in p for p in problems))
+        _, problems = config.validate(dict(BASE, api_keys={"home-assistant": auth.hash_api_key("k")}))
         self.assertEqual(problems, [])
 
     def test_new_api_key_saves_only_the_hash(self):
@@ -984,16 +986,20 @@ class ActionTests(unittest.TestCase):
         path = os.path.join(d, "config.toml")
         shutil.copy(os.path.join(HERE, "couchlink.example.toml"), path)
         lines = []
-        self.assertEqual(setup_pc.new_api_key(path, out=lines.append), 0)
+        self.assertEqual(setup_pc.new_api_key(path, "home-assistant", out=lines.append), 0)
         key = lines[0].split(": ", 1)[1]
         text = open(path).read()
         self.assertNotIn(key, text)
+        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)     # only root can read the hashes
         settings, problems = config.load_config(path)
         self.assertEqual(problems, [])
-        self.assertEqual(settings["api_key_hash"], auth.hash_api_key(key))
-        setup_pc.new_api_key(path, out=lines.append)               # a new key replaces it
-        self.assertEqual(open(path).read().count("api_key_hash ="), 1)
-        self.assertNotEqual(config.load_config(path)[0]["api_key_hash"], auth.hash_api_key(key))
+        self.assertEqual(settings["api_keys"], {"home-assistant": auth.hash_api_key(key)})
+        setup_pc.new_api_key(path, "phone", out=lines.append)       # another name keeps the first
+        self.assertEqual(sorted(config.load_config(path)[0]["api_keys"]), ["home-assistant", "phone"])
+        setup_pc.new_api_key(path, "home-assistant", out=lines.append)   # the same name replaces it
+        self.assertEqual(open(path).read().count("home-assistant ="), 1)
+        self.assertNotEqual(config.load_config(path)[0]["api_keys"]["home-assistant"], auth.hash_api_key(key))
+        self.assertEqual(setup_pc.new_api_key(path, "bad name!", out=lines.append), 1)
 
     def test_bearer_key(self):
         self.assertEqual(auth.bearer_key({"Authorization": "Bearer abc"}), "abc")

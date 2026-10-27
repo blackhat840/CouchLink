@@ -118,7 +118,9 @@ sudo systemctl disable --now couchlink.service
 |---|---|
 | `sudo bash install.sh --setup` | Asks for the settings again, all but the CEC addresses. Press Enter to keep a value. |
 | `sudo bash install.sh --setup-cec` | Finds the CEC addresses again, for example after moving a cable |
-| `sudo couchlink --new-api-key` | Generates a new API key for scripts and Home Assistant |
+| The [settings page](status-page-and-logs.md#settings-page), `http://<pi>:8080/admin` | Changes the common settings, the API keys and its own password from a browser |
+| `sudo couchlink --admin-password` | Sets the settings page's password |
+| `sudo couchlink --new-api-key NAME` | Generates an API key for scripts and Home Assistant, such as `--new-api-key home-assistant` |
 | `sudo nano /etc/couchlink/config.toml` | Edits any setting by hand. See [Configuration](configuration.md). |
 
 Restart CouchLink after a change: `sudo systemctl restart couchlink`.

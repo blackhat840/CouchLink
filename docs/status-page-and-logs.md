@@ -56,20 +56,54 @@ Each button shows only when it would do something:
 
 In a dry run, the buttons only log what they would do.
 
+## Settings page
+
+The settings page, at `http://<pi>:8080/admin` or the Settings link on the
+status page, changes CouchLink from a browser:
+
+- **Settings:** the PC's address, the HDMI inputs, what happens when the PC
+  wakes or sleeps by itself, the status page's buttons and a few timings.
+  Saving checks the values first and saves nothing if one is wrong. It keeps
+  the comments in the config file, keeps the previous version as
+  `config.toml.bak`, and restarts CouchLink to use them. Other settings are
+  in the config file.
+- **API keys:** generate a key with a name, such as `home-assistant`, and
+  revoke one without touching the others. Changes work straight away.
+- **Password:** change the page's password. Other devices that are logged in
+  have to log in again.
+
+The page needs a password. Set it during `sudo bash install.sh --setup`, or
+with:
+
+```bash
+sudo couchlink --admin-password
+```
+
+Logging in keeps you logged in on that device for 30 days. 5 wrong passwords
+from one address lock it out for a minute. Logins, wrong passwords and every
+change are logged as `[ADMIN]`. Only this page can make changes, so another
+web site can't use your login.
+
+The password is stored as a salted hash. The config file holds that hash and
+the API keys' hashes, so only root can read it.
+
 ## API
 
 The buttons use these requests. Scripts, phone shortcuts and Home Assistant
-can use them too, with an API key. Generate one with:
+can use them too, with an API key. Give each one its own key, so you can
+revoke one without touching the others. Generate keys on the
+[settings page](#settings-page), or with:
 
 ```bash
-sudo couchlink --new-api-key
+sudo couchlink --new-api-key home-assistant
 sudo systemctl restart couchlink
 ```
 
-It prints the key once. Copy it somewhere safe, such as a password manager.
-Only a hash of the key is saved in the config, so it can't be shown again.
-Running the command again generates a new key, and the old one stops working
-once CouchLink restarts. `sudo bash install.sh --setup` can also generate one.
+A key is shown once. Copy it somewhere safe, such as a password manager. Only
+a hash of it is saved in the config, so it can't be shown again. Generating a
+key with a name that already exists replaces that key. Keys stay until you
+revoke them. The log names the key each request used, such as
+`Wake PC requested from 192.168.1.20 (key home-assistant)`.
 
 | Request | Does |
 |---|---|
@@ -136,6 +170,7 @@ sudo journalctl -u couchlink.service | grep -E "\[(INPUT|SUSPEND|WOL)\]"
 | `SUSPEND` | Suspend attempts and results |
 | `WATCHER` | The PC becoming reachable or unreachable, and what CouchLink did about it |
 | `ACTION` | Buttons and API requests, and remote sessions starting and ending |
+| `ADMIN` | Logins to the settings page, wrong passwords and every change made there |
 | `RECOVER` | Automatic input switches being undone |
 | `TV` | Standby messages and TV power status |
 | `CEC-TX` | Every command CouchLink sends, with the reason |

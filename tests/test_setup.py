@@ -21,8 +21,9 @@ class SetupTests(unittest.TestCase):
         self.output = []
         self.ssh_calls = []
 
-    def setup(self, answers, found_mac=None, pc_awake=True, wakes=True, ssh_works=True, running=True):
-        answers = list(answers)
+    def setup(self, answers, found_mac=None, pc_awake=True, wakes=True, ssh_works=True, running=True,
+              passwords=()):
+        answers, passwords = list(answers), list(passwords)
         self.service_calls, self.wake_calls = [], []
 
         def ask(question):
@@ -40,9 +41,15 @@ class SetupTests(unittest.TestCase):
         def service(action):
             self.service_calls.append(action)
             return running
+
+        def secret(question):
+            self.assertTrue(passwords, f"unexpected password question: {question}")
+            return passwords.pop(0)
         code = setup_pc.run_setup(self.path, ask=ask, out=self.output.append,
                                    mac_finder=lambda host: found_mac, ssh_setup=ssh_setup,
-                                   pc_check=lambda host: pc_awake, waker=waker, service=service)
+                                   pc_check=lambda host: pc_awake, waker=waker, service=service,
+                                   secret=secret)
+        self.assertEqual(passwords, [], "not every password was used")
         self.assertEqual(answers, [], "not every answer was used")
         settings, problems = config.load_config(self.path)
         self.assertEqual(problems, [])                   # no typos or broken TOML
@@ -69,7 +76,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(config.set_config_value("a = 1\n", "ssh_user", "deck"), 'a = 1\nssh_user = "deck"\n')
 
     def test_setup_fills_in_the_pc_settings(self):
-        code, s = self.setup(["192.168.1.50", "", "", "", "", "2", "", "", "n"], found_mac="aa:bb:cc:dd:ee:01")
+        code, s = self.setup(["192.168.1.50", "", "", "", "", "2", "", "n", "", "n"], found_mac="aa:bb:cc:dd:ee:01")
         self.assertEqual(code, 0)
         self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("192.168.1.50", "aa:bb:cc:dd:ee:01", "deck", "standby"))
@@ -84,15 +91,15 @@ class SetupTests(unittest.TestCase):
 
     def test_setup_asks_again_after_a_bad_answer(self):
         code, s = self.setup(["", "target-pc.local", "192.168.1.50", "zz", "AA-BB-CC-DD-EE-02",
-                              "bazzite user", "gamer", "", "", "3", "1", "", "", "y"])
+                              "bazzite user", "gamer", "", "", "3", "1", "", "n", "", "y"])
         self.assertEqual(code, 0)
         self.assertEqual((s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("aa:bb:cc:dd:ee:02", "gamer", "nothing"))
         self.assertEqual(self.ssh_calls, [("192.168.1.50", "gamer")])
 
     def test_setup_offers_the_saved_values(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "", "", "2", "", "", "n"])
-        code, s = self.setup(["", "", "", "", "", "", "", "", "n"])
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "", "", "2", "", "n", "", "n"])
+        code, s = self.setup(["", "", "", "", "", "", "", "n", "", "n"])
         self.assertEqual((s["pc_host"], s["pc_mac"], s["ssh_user"], s["on_pc_sleep"]),
                          ("192.168.1.50", "aa:bb:cc:dd:ee:01", "gamer", "standby"))
 
@@ -103,7 +110,7 @@ class SetupTests(unittest.TestCase):
         text = config.set_config_value(text, "pc_sleep_switch_to", "11:00")
         with open(self.path, "w") as f:
             f.write(text)
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "", "", "n"])   # no sleep question
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "", "n", "", "n"])   # no sleep question
         self.assertEqual((s["on_pc_sleep"], s["pc_sleep_switch_to"]), ("switch", "11:00"))
 
     def test_setup_completes_a_config(self):
@@ -113,31 +120,52 @@ class SetupTests(unittest.TestCase):
         text = config.set_config_value(text, "pi_address", "40:00")
         with open(self.path, "w") as f:
             f.write(text)
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "n"])
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n", "", "n"])
         self.assertIn("The config is complete", "\n".join(self.output))
 
     def test_setup_asks_for_name_wake_and_api_key(self):
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "Living Room PC", "2", "1", "n", "y", "n"])
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "Living Room PC", "2", "1", "n",
+                              "y", "y", "", "n"], passwords=["sofa-console", "sofa-console"])
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
         self.assertFalse(s["status_page_buttons"])
-        key = next(line for line in self.output if line.startswith("New API key: ")).split(": ", 1)[1]
-        self.assertEqual(s["api_key_hash"], auth.hash_api_key(key))
+        self.assertTrue(auth.check_password("sofa-console", s["admin_password_hash"]))
+        key = next(line for line in self.output
+                   if line.startswith("New API key home-assistant: ")).split(": ", 1)[1]
+        self.assertEqual(s["api_keys"], {"home-assistant": auth.hash_api_key(key)})
         with open(self.path) as f:
-            self.assertNotIn(key, f.read())
-        code, s = self.setup(["", "", "", "", "", "", "", "", "n"])      # Enter keeps them all
+            text = f.read()
+        self.assertNotIn(key, text)
+        self.assertNotIn("sofa-console", text)
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)    # only root can read the hashes
+        code, s = self.setup(["", "", "", "", "", "", "", "", "", "n"])  # Enter keeps them all
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
         self.assertFalse(s["status_page_buttons"])                    # Enter keeps "n" too
-        self.assertEqual(s["api_key_hash"], auth.hash_api_key(key))
+        self.assertEqual(s["api_keys"], {"home-assistant": auth.hash_api_key(key)})
+        self.assertTrue(auth.check_password("sofa-console", s["admin_password_hash"]))
+
+    def test_setup_second_key_keeps_the_first(self):
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n", "y", "home-assistant", "n"])
+        self.setup(["", "", "", "", "", "", "", "n", "y", "phone", "n"])
+        s = config.load_config(self.path)[0]
+        self.assertEqual(sorted(s["api_keys"]), ["home-assistant", "phone"])
+
+    def test_setup_password_must_be_long_enough_and_match(self):
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "y", "", "n"],
+                   passwords=["short", "long enough 1", "long enough 2", "long enough", "long enough"])
+        text = "\n".join(self.output)
+        self.assertIn("at least 8 characters", text)
+        self.assertIn("didn't match", text)
+        self.assertTrue(auth.check_password("long enough", config.load_config(self.path)[0]["admin_password_hash"]))
 
     def test_ssh_waits_for_a_sleeping_pc_to_wake(self):
-        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y", "y"], pc_awake=False)
+        code, s = self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n", "", "y", "y"], pc_awake=False)
         self.assertEqual(self.wake_calls, ["192.168.1.50"])
         self.assertEqual(self.service_calls, ["stop", "start"])     # paused so it isn't suspended again
         self.assertEqual(self.ssh_calls, [("192.168.1.50", "deck")])
         self.assertIn("doesn't answer", "\n".join(self.output))
 
     def test_ssh_skipped_when_the_pc_stays_asleep(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y", "y"], pc_awake=False, wakes=False)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n", "", "y", "y"], pc_awake=False, wakes=False)
         self.assertEqual(self.ssh_calls, [])
         text = "\n".join(self.output)
         self.assertIn("needs the PC to be on", text)
@@ -145,7 +173,7 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn("The config is complete", text)
 
     def test_ssh_not_woken_if_declined(self):
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y", "n"], pc_awake=False)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n", "", "y", "n"], pc_awake=False)
         self.assertEqual((self.wake_calls, self.ssh_calls, self.service_calls), ([], [], []))
 
     def test_failed_ssh_is_not_called_complete(self):
@@ -153,7 +181,7 @@ class SetupTests(unittest.TestCase):
             text = f.read().replace("pc_addresses = []", 'pc_addresses = ["12:00"]')
         with open(self.path, "w") as f:
             f.write(config.set_config_value(text, "pi_address", "40:00"))
-        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "", "y"], ssh_works=False)
+        self.setup(["192.168.1.50", "aa:bb:cc:dd:ee:01", "", "", "", "1", "", "n", "", "y"], ssh_works=False)
         text = "\n".join(self.output)
         self.assertIn("SSH to the PC doesn't work yet", text)
         self.assertNotIn("The config is complete", text)

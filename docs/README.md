@@ -16,7 +16,7 @@
 | File | Purpose |
 |---|---|
 | `couchlink/` | The program. Installed in `/usr/local/lib/couchlink`, with the `couchlink` command in `/usr/local/bin`. |
-| `couchlink/static/` | The status page: its HTML, CSS and JavaScript |
+| `couchlink/static/` | The status page and the settings page: their HTML, CSS and JavaScript |
 | `couchlink.example.toml` | Example settings, copied to `/etc/couchlink/config.toml` on first install |
 | `install.sh` | Installer and updater |
 | `tests/` | Offline tests, one file for each part of the program |
@@ -31,7 +31,8 @@
 | `actions.py` | Wake-on-LAN, suspending over SSH, and the dry run |
 | `power.py` | Pinging the PC, and the SSH session that hears it sleep, restart or shut down |
 | `web.py` | The status page and its API |
-| `auth.py` | API keys and lockouts |
+| `admin.py` | The settings page: login, settings, API keys and the password |
+| `auth.py` | API keys, passwords, login cookies and lockouts |
 | `config.py` | Settings: defaults, checking, writing and `--migrate-config` |
 | `setup_pc.py`, `setup_cec.py` | `--setup` and `--setup-cec` |
 | `cli.py` | The `couchlink` command |

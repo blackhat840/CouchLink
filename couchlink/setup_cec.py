@@ -4,7 +4,7 @@
 import subprocess
 
 from .cec import cec_scan, cec_watch, dotted
-from .config import DEFAULTS, load_config, set_config_value, unset_config_value, validate
+from .config import DEFAULTS, load_config, save_config, set_config_value, unset_config_value, validate
 
 
 def couchlink_service(action):
@@ -155,10 +155,7 @@ def run_cec_setup(path, ask=input, out=print, scan=cec_scan, watch=cec_watch, se
     elif declined and current.get("on_pc_sleep") == "switch":
         text = set_config_value(text, "on_pc_sleep", "nothing")
     try:
-        with open(path + ".bak", "w") as f:
-            f.write(original)
-        with open(path, "w") as f:
-            f.write(text)
+        save_config(path, original, text)
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup-cec")
         return 1

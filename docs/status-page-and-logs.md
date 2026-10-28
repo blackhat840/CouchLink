@@ -73,18 +73,38 @@ status page, changes CouchLink from a browser:
   in the config file.
 - **API keys:** generate a key with a name, such as `home-assistant`, and
   revoke one without touching the others. Changes work straight away.
+- **Finding the HDMI inputs:** scans the bus and listens while you switch the
+  TV to the PC, then fills in the inputs. See
+  [Finding your CEC addresses](configuration.md#on-the-settings-page).
+- **The PC's MAC address:** **Find it from the IP address** reads it from the
+  Pi's network table. The PC has to be on.
+- **Check SSH to the PC:** says whether the Pi can log in to the PC to put it to
+  sleep, and what to do if it can't.
 - **Password:** change the page's password. Other devices that are logged in
   have to log in again.
 
-The page needs a password. Set it during `sudo bash install.sh --setup`, or
-with:
+### The first visit
+
+On a new install, the page asks for a one-time setup code and a new password.
+The installer prints the code. To see it again:
+
+```bash
+sudo couchlink --setup-code
+```
+
+The code works once. It proves that whoever sets the password is the person
+who installed CouchLink, not just anyone on the network. Until the settings
+are complete, CouchLink runs only this page, and the status page sends you
+here.
+
+To set or change the password in the terminal instead:
 
 ```bash
 sudo couchlink --admin-password
 ```
 
-Logging in keeps you logged in on that device for 30 days. 5 wrong passwords
-from one address lock it out for a minute. Logins, wrong passwords and every
+Logging in keeps you logged in on that device for 30 days. 5 wrong passwords,
+or setup codes, from one address lock it out for a minute. Logins, wrong passwords and every
 change are logged as `[ADMIN]`. Only this page can make changes, so another
 web site can't use your login.
 

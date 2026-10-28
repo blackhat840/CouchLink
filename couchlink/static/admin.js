@@ -4,6 +4,7 @@
 
   function show(which) {
     $("message").hidden = which !== "message";
+    $("setup").hidden = which !== "setup";
     $("login").hidden = which !== "login";
     $("panels").hidden = which !== "panels";
     $("logout").hidden = which !== "panels";
@@ -29,9 +30,13 @@
       .then(function (r) { return r.json().then(function (j) { j.status = r.status; return j; }); })
       .then(function (j) {
         if (j.result === "login_needed") { show("login"); $("password").focus(); return; }
+        if (j.result === "setup") { show("setup"); $("setupCode").focus(); return; }
         if (!j.ok) { message(j.message || "CouchLink answered " + j.status); return; }
         drawSettings(j.fields);
         drawKeys(j.keys);
+        drawTodo(j.todo || []);
+        piLogical = j.pi_logical_address;
+        $("finder").hidden = !j.cec;
         show("panels");
       })
       .catch(function () { message("Could not reach CouchLink. Check that the Pi is on."); });
@@ -79,6 +84,7 @@
       var label = el("label", { "for": id }, f.label);
       if (f.kind === "bool") { wrap.appendChild(input); wrap.appendChild(label); }
       else { wrap.appendChild(label); wrap.appendChild(input); }
+      if (f.key === "pc_mac") wrap.appendChild(findMacRow());
       box.appendChild(wrap);
     });
   }
@@ -118,6 +124,118 @@
       .then(function (r) { if (!r.ok) throw new Error(); $("saveNote").textContent = "Saved. CouchLink restarted with the new settings"; load(); })
       .catch(function () { setTimeout(waitForRestart, 1500); });
   }
+
+  // ---- what still has to be filled in, on a first setup
+  function drawTodo(problems) {
+    var list = $("todoList");
+    list.textContent = "";
+    problems.forEach(function (p) { list.appendChild(el("li", {}, p)); });
+    $("todo").hidden = !problems.length;
+  }
+
+  // ---- the MAC address, read from the Pi's network table
+  function findMacRow() {
+    var row = el("div", { "class": "row" });
+    var b = el("button", { "class": "btn", type: "button" }, "Find it from the IP address");
+    var note = el("span", { "class": "note", role: "status" });
+    b.addEventListener("click", function () {
+      note.textContent = "Looking";
+      post("/admin/find-mac", { host: $("f_pc_host").value }).then(function (j) {
+        note.textContent = j.message || "";
+        if (j.ok) $("f_pc_mac").value = j.mac;
+      });
+    });
+    row.appendChild(b);
+    row.appendChild(note);
+    return row;
+  }
+
+  // ---- finding the HDMI inputs: scan the bus, then listen for the switch to the PC
+  var piLogical = 1, found = null, listening = false;
+  function setField(key, value) {
+    var input = $("f_" + key);
+    if (input) input.value = value;
+  }
+  $("scan").addEventListener("click", function () {
+    var note = $("finderNote"), list = $("devices");
+    $("scan").disabled = true;
+    $("listen").disabled = true;
+    note.textContent = "Asking every HDMI device who it is. This can take up to a minute";
+    post("/admin/cec/scan").then(function (j) {
+      $("scan").disabled = false;
+      if (!j.ok) { note.textContent = j.message || "The scan didn't work"; return; }
+      var layout = $("layout").value;
+      var pi = j.devices.filter(function (d) { return d.logical === piLogical; })[0];
+      var bar = layout === "tv" ? null : j.devices.filter(function (d) { return d.logical === 5; })[0];
+      found = { known: j.devices.map(function (d) { return d.address; }), pi: pi, bar: bar };
+      list.textContent = "";
+      j.devices.forEach(function (d) {
+        var what = d === pi ? "this Pi" : d === bar ? "your soundbar or receiver" : (d.osd || d.vendor || "");
+        var li = el("li");
+        li.appendChild(el("code", {}, d.dotted));
+        li.appendChild(el("span", {}, d.name + (what ? ", " + what : "")));
+        list.appendChild(li);
+      });
+      list.hidden = false;
+      $("f_use_tv").checked = true;
+      if (pi) setField("pi_address", pi.address);
+      setField("soundbar_address", bar ? bar.address : "");
+      note.textContent = (pi ? "Found the Pi" : "The Pi didn't answer, so type its input below") +
+        (layout === "tv" ? "" : bar ? " and the soundbar" : ". No soundbar answered, so type its input below") +
+        ". Now press 2, then switch the TV to the PC";
+      $("listen").disabled = false;
+    }).catch(function () { $("scan").disabled = false; note.textContent = "Could not reach CouchLink"; });
+  });
+  $("listen").addEventListener("click", function () {
+    if (listening || !found) return;
+    var note = $("finderNote"), end = Date.now() + 60000;
+    var skip = found.known.concat(["00:00"]);
+    listening = true;
+    $("listen").disabled = true;
+    note.textContent = "Listening. Switch the TV to the PC now. If the PC is already on screen, switch away and back";
+    post("/admin/cec/heard").then(function (start) {
+      function poll() {
+        post("/admin/cec/heard", { since: start.since }).then(function (j) {
+          var pc = (j.heard || []).filter(function (h) { return skip.indexOf(h.address) < 0; })[0];
+          if (pc) {
+            listening = false;
+            $("listen").disabled = false;
+            setField("pc_addresses", pc.address);
+            note.textContent = "Heard a switch to " + pc.dotted + ". It's filled in as the PC's input. " +
+              "Check the inputs below, then save";
+            return;
+          }
+          if (Date.now() > end) {
+            listening = false;
+            $("listen").disabled = false;
+            note.textContent = "Didn't hear a switch. Your TV may not announce it. Type the PC's input below, " +
+              "such as 12:00 for input 2 of a soundbar on TV input 1";
+            return;
+          }
+          setTimeout(poll, 1500);
+        });
+      }
+      poll();
+    });
+  });
+
+  // ---- the first visit: setup code and a password
+  $("setupForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    if ($("setupPassword").value !== $("setupPassword2").value) {
+      $("setupNote").textContent = "The two passwords don't match";
+      return;
+    }
+    post("/admin/setup", { code: $("setupCode").value, password: $("setupPassword").value }).then(function (j) {
+      $("setupNote").textContent = j.ok ? "" : (j.message || "");
+      if (j.ok) load();
+    });
+  });
+
+  $("checkSsh").addEventListener("click", function () {
+    $("saveNote").textContent = "Checking";
+    post("/admin/check-ssh").then(function (j) { $("saveNote").textContent = j.message || ""; });
+  });
 
   // ---- API keys
   function drawKeys(names) {

@@ -9,15 +9,33 @@ in. A device on TV input 2 is `2.0.0.0`. A device on input 1 of a soundbar
 that is itself on TV input 1 is `1.1.0.0`. CouchLink accepts either `1.1.0.0` or
 the short form `11:00`.
 
-CouchLink finds them for you. Turn the TV on, plug in and turn on the PC, and
-run:
+CouchLink finds them for you. Turn the TV on, and plug in and turn on the PC.
+
+### On the settings page
+
+Open the [settings page](status-page-and-logs.md#settings-page) and use **Find
+the HDMI inputs**:
+
+1. Choose how the PC is connected: to the TV, to the TV with a soundbar or AV
+   receiver on the ARC port, or to a soundbar or AV receiver.
+2. Press **Scan the HDMI devices**. Every device that speaks CEC is listed, and
+   the Pi's input and the soundbar's are filled in.
+3. Press **Listen while I switch to the PC**, then switch the TV to the PC with
+   the remote. The PC usually doesn't speak CEC, so this is how its input is
+   found. If it hears nothing within a minute, your TV may not announce the
+   switch. Type the PC's input into the field instead.
+4. Check the inputs in the form, then press **Save and restart**.
+
+CouchLink keeps running while it does this. It uses the same connection to
+the TV.
+
+### In the terminal
 
 ```bash
 sudo bash install.sh --setup-cec
 ```
 
-`sudo couchlink --setup-cec` does the same. The installer offers it after the
-settings on a first install. It:
+`sudo couchlink --setup-cec` does the same. It:
 
 1. Asks how the PC is connected: to the TV, to the TV with a soundbar or AV
    receiver on the ARC port, or to a soundbar or AV receiver.
@@ -78,9 +96,9 @@ The installer creates `/etc/couchlink/config.toml`.
 
 ### The settings
 
-Everything except the CEC addresses can be filled in by answering a few
-questions. The installer asks them at the end of a first install. To run them
-again at any time:
+The [settings page](status-page-and-logs.md#settings-page) has the common
+settings, and is the easiest way to change them. To answer questions in the
+terminal instead:
 
 ```bash
 sudo bash install.sh --setup

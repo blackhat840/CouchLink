@@ -10,8 +10,7 @@ import subprocess
 import time
 
 from .actions import send_magic_packet
-from .admin import MIN_PASSWORD
-from .auth import KEY_NAME_RE, hash_api_key, hash_password
+from .auth import KEY_NAME_RE, MIN_PASSWORD, hash_api_key, hash_password, remove_setup_code
 from .auth import new_api_key as generate_key
 from .common import DOCS_URL
 from .config import DEFAULTS, load_config, save_config, set_api_key, set_config_value, validate
@@ -87,6 +86,7 @@ def set_admin_password(path, out=print, secret=getpass.getpass):
     except PermissionError:
         out("Run it with sudo: sudo couchlink --admin-password")
         return 1
+    remove_setup_code(path)
     out("Saved. Open the settings page at http://<pi>:8080/admin and log in.")
     out("It works straight away. Anyone logged in on another device has to log in again.")
     return 0
@@ -157,6 +157,32 @@ def wake_pc(host, send, out, answers=pc_answers, clock=time.monotonic, sleep=tim
     out("The PC didn't wake up. Turn it on by hand, and see the Wake-on-LAN steps in")
     out(f"{DOCS_URL}/preparing-the-pc.md")
     return False
+
+
+def check_ssh(host, user):
+    """(works, advice) for SSH from the Pi to the PC without a password."""
+    try:
+        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", f"{user}@{host}", "echo ok"],
+                           capture_output=True, text=True, timeout=15)
+    except (OSError, subprocess.SubprocessError) as e:
+        return False, f"Couldn't run ssh: {e}"
+    if r.returncode == 0 and r.stdout.strip() == "ok":
+        return True, "SSH to the PC works, so CouchLink can put it to sleep"
+    error = (r.stderr or "").strip().splitlines()
+    return False, (f"ssh said: {error[-1]}. " if error else "") + ssh_problem(r.stderr or "")
+
+
+def setup_ssh_only(path, out=print, ssh_setup=None):
+    """sudo couchlink --setup-ssh: only the SSH key, for the PC in the config."""
+    settings, _ = load_config(path)
+    host = (settings or {}).get("pc_host")
+    if not host or host in PLACEHOLDERS:
+        out("Set the PC's address first, on the settings page or with: sudo bash install.sh --setup")
+        return 1
+    user = settings.get("ssh_user") or "deck"
+    out("The Pi needs an SSH key the PC trusts, so it can put the PC to sleep. The PC needs a password")
+    out(f"and its SSH server turned on first (steps 1 and 2 of {DOCS_URL}/preparing-the-pc.md).")
+    return 0 if (ssh_setup or setup_ssh_key)(host, user, out) else 1
 
 
 def setup_ssh_key(host, user, out):

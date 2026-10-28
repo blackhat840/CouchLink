@@ -264,3 +264,7 @@ legend { padding: 0 6px; font: 600 11px var(--mono); letter-spacing: 0.16em; tex
 .newkey[hidden] { display: none; }
 .newkey code { word-break: break-all; font-size: 14px; color: var(--cyan); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* without a TV (use_tv = false), the TV's parts of the page are hidden */
+body.no-tv #tTv, body.no-tv #tIn, body.no-tv #tGuard, body.no-tv #tSleep, body.no-tv .path,
+body.no-tv #tabCec { display: none; }

@@ -140,6 +140,30 @@ PC, such as Moonlight's own Wake-on-LAN or a phone app, CouchLink sees the PC
 wake by itself and turns the TV on and switches it to the PC
 (`auto_switch_on_pc_wake`).
 
+## Without a TV
+
+CouchLink can also run with no TV at all, only to wake the PC for remote play,
+for example to stream to a Steam Deck while you are away. Choose "No" when
+`sudo bash install.sh --setup` asks whether the Pi is plugged into a TV, or set
+`use_tv = false` in the config.
+
+Without a TV:
+
+- CouchLink doesn't start `cec-client` and needs no CEC addresses. Skip
+  `--setup-cec`. The Pi only needs the network.
+- It never suspends the PC by itself, and never wakes it by itself.
+- **Wake PC** on the status page, or `POST /api/wake`, wakes the PC and starts
+  a remote session. **Wake PC and TV** is not offered.
+- The PC's own sleep timer puts it back to sleep when you stop playing, and
+  that ends the session. **Put PC to sleep** does it straight away. Make sure
+  the timer is turned on in the PC's power settings.
+- If something else wakes the PC, such as Moonlight's own Wake-on-LAN, it is
+  left alone. There is no TV to turn on.
+- The status page shows only the PC: its state, the buttons and the log.
+
+To go back to using a TV, run `sudo bash install.sh --setup-cec`. It finds the
+CEC addresses and turns `use_tv` back on.
+
 ---
 
 Back to the [Documentation](README.md) or the [README](../README.md).

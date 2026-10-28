@@ -22,7 +22,7 @@ class Controller:
         self.actions = actions
         self.now = clock
         self.pc_set = set(cfg.pc_addresses)
-        self.pc_primary = cfg.pc_addresses[0]
+        self.pc_primary = cfg.pc_addresses[0] if cfg.pc_addresses else None   # None without a TV
         self.la = cfg.pi_logical_address
         self.suspects = ({cfg.pi_address, cfg.soundbar_address, cfg.soundbar_pc_audio_address}
                          | set(cfg.guard_addresses)) - {None} - self.pc_set
@@ -402,8 +402,12 @@ class Controller:
         d = self.desired()
         if self.session_active() and d != "awake":
             self.session_seen_up = True
-            log("WATCHER", "PC is now reachable (remote session). Leaving the TV as it is")
+            log("WATCHER", "PC is now reachable (remote session)" +
+                (". Leaving the TV as it is" if self.cfg.use_tv else ""))
             return
+        if not self.cfg.use_tv:
+            log("WATCHER", "PC is now reachable" + (" (woken by CouchLink)" if ours else ""))
+            return      # without a TV, CouchLink leaves an awake PC alone
         if d == "awake":
             log("WATCHER", "PC is now reachable" + (" (woken by CouchLink)" if ours else ""))
             # Its HDMI outputs just came alive. This is when a soundbar or TV may switch by itself.
@@ -504,6 +508,10 @@ class Controller:
         params = params if isinstance(params, dict) else {}
         frm = f" from {source}" if source else ""
         t = self.now()
+        if name == "wake" and params.get("tv") and not self.cfg.use_tv:
+            # Refused before the rate limit, so it doesn't hold up a Wake PC right after
+            log("ACTION", f"Wake PC and TV requested{frm}, but CouchLink is set up without a TV")
+            return False, "no_tv", "CouchLink is set up without a TV. Use Wake PC instead"
         if name in ("wake", "sleep"):
             prev = self.last_action.get(name)
             if prev is not None and t - prev < ACTION_COOLDOWN:
@@ -620,14 +628,16 @@ class Controller:
                 self.next_boot_poll = t + TV_BOOT_POLL
                 self.actions.cec_send("pow 0")
 
-        if self.cfg.power_poll_interval and t >= self.next_power_poll:
+        if not self.cfg.use_tv:
+            pass                # no TV to ask, and no input to guess at startup
+        elif self.cfg.power_poll_interval and t >= self.next_power_poll:
             self.next_power_poll = t + self.cfg.power_poll_interval
             self.actions.cec_send("pow 0")
         elif not self.cfg.power_poll_interval and self.next_power_poll and t >= self.next_power_poll:
             self.next_power_poll = None     # still do the one startup query
             self.actions.cec_send("pow 0")
 
-        if self.startup_pending and t >= self.startup_check_at:
+        if self.startup_pending and t >= self.startup_check_at and self.cfg.use_tv:
             if self.pc_online is not None:
                 self.startup_pending = False
                 if self.pc_online and self.tv_input is None and self.tv_power != "standby":
@@ -739,6 +749,7 @@ class Controller:
                                    if self.cfg.pc_sleep_switch_to else None),
             "power_poll_interval": self.cfg.power_poll_interval,
             "actions_enabled": self.cfg.status_page_buttons,
+            "tv": self.cfg.use_tv,
             "remote_session_seconds": int(t - self.session_since) if self.session_active() else None,
             "last_wol_seconds_ago": int(t - self.last_wol) if self.last_wol is not None else None,
             "last_suspend_seconds_ago": int(t - self.last_suspend) if self.last_suspend is not None else None,

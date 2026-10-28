@@ -35,6 +35,7 @@ pc_addresses = []                    # REQUIRED, e.g. ["12:00"]
 ignore_announcements_from = []       # e.g. [5] to ignore the soundbar's own announcements
 
 [behavior]
+use_tv = true                        # false: no TV. CouchLink only wakes the PC for remote play
 claim_pc_input = true                # the Pi announces itself as the active source for the PC
 auto_switch_on_pc_wake = "always"    # PC woke by itself: "always" | "if_tv_on" | "never"
 on_pc_sleep = "nothing"              # PC went to sleep by itself: "switch" | "standby" | "nothing"

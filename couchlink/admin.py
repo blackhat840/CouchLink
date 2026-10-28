@@ -18,10 +18,12 @@ FIELDS = [
     ("The PC", "pc_host", "IP address", "text", {}),
     ("The PC", "pc_mac", "MAC address, for Wake-on-LAN", "text", {}),
     ("The PC", "ssh_user", "SSH user", "text", {}),
-    ("HDMI inputs", "pc_addresses", "The PC's input, such as 12:00. Separate several with commas",
-     "addresses", {}),
-    ("HDMI inputs", "pi_address", "The Pi's input", "address", {}),
-    ("HDMI inputs", "soundbar_address", "The soundbar's or receiver's input", "address",
+    ("TV and HDMI inputs", "use_tv", "A TV is plugged into the Pi. Off: only wake the PC for remote play",
+     "bool", {}),
+    ("TV and HDMI inputs", "pc_addresses", "The PC's input, such as 12:00. Separate several with commas",
+     "addresses", {"blank": "Not needed without a TV"}),
+    ("TV and HDMI inputs", "pi_address", "The Pi's input", "address", {"blank": "Not needed without a TV"}),
+    ("TV and HDMI inputs", "soundbar_address", "The soundbar's or receiver's input", "address",
      {"blank": "No soundbar or receiver"}),
     ("When the PC wakes or sleeps", "auto_switch_on_pc_wake", "When the PC wakes by itself", "select",
      {"options": [["always", "Turn the TV on and switch it to the PC"],
@@ -64,7 +66,9 @@ def parse_field(kind, value, options):
         return (value, None) if value in [o[0] for o in options["options"]] else (None, "is not one of the choices")
     if kind == "addresses":
         items = [a for a in value.replace(",", " ").split() if a]
-        return (items, None) if items else (None, "needs at least one input")
+        if items:
+            return items, None
+        return (None, None) if "blank" in options else (None, "needs at least one input")
     if not value:
         return (None, None) if "blank" in options else (None, "can't be empty")
     return value, None

@@ -36,6 +36,12 @@ BASE.update(pc_host="192.168.1.50", pc_mac="aa:bb:cc:dd:ee:01",
             hid_passthrough=True, raw_debug=False)
 
 
+def assert_private(test, path):
+    """The file is readable by its owner only. Windows has no such permissions, so it is",
+    checked on Linux, where CouchLink runs."""
+    if os.name == "posix":
+        test.assertEqual(os.stat(path).st_mode & 0o777, 0o600, path)
+
 class Clock:
     def __init__(self):
         self.t = 1000.0

@@ -147,6 +147,8 @@ def run_cec_setup(path, ask=input, out=print, scan=cec_scan, watch=cec_watch, se
 
     original = text
     text = set_config_value(text, "pc_addresses", [pc])
+    if current.get("use_tv") is False:
+        text = set_config_value(text, "use_tv", True)       # finding the addresses means there is a TV
     text = set_config_value(text, "pi_address", pi)
     text = set_config_value(text, "soundbar_address", bar) if bar else unset_config_value(text, "soundbar_address")
     if switch_to:

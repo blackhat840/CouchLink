@@ -77,6 +77,16 @@ def device_name(logical):
     return "TV" if logical == 0 else f"{LOGICAL_NAMES.get(logical, 'device')} ({logical})"
 
 
+class NoCec:
+    """Used instead of CecClient without a TV (use_tv = false). Sends nothing."""
+
+    def send(self, command):
+        pass
+
+    def stop(self):
+        pass
+
+
 class CecClient:
     """Owns the cec-client process. Posts ("cec", msg) and ("key", name) events."""
 

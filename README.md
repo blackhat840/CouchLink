@@ -20,6 +20,8 @@ is installed on the PC.
   input, turn it off, or leave it alone.
 - **Remote play.** Wake the PC from the status page and keep it awake without
   the TV, for streaming to a Steam Deck or phone with Steam Link or Moonlight.
+  It also works [without a TV](docs/how-it-works.md#without-a-tv), as a wake
+  and sleep switch for remote play only.
 - **Wake and sleep buttons** on the status page, and an API with named keys
   for scripts, phone shortcuts and Home Assistant.
 - **A settings page** with a password, to change settings and API keys from a
@@ -36,7 +38,8 @@ is installed on the PC.
 
 - A Raspberry Pi with HDMI, such as a Pi Zero W, on Raspberry Pi OS Lite
   (Bookworm or newer).
-- A TV with HDMI-CEC turned on.
+- A TV with HDMI-CEC turned on, unless you only want
+  [remote play without a TV](docs/how-it-works.md#without-a-tv).
 - A gaming PC running SteamOS, Bazzite or another Linux with systemd, on the
   same network as the Pi. Wired Ethernet is the most reliable way to wake it.
 

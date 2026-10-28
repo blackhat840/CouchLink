@@ -210,8 +210,8 @@ seconds.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `pc_addresses` | required | List of inputs that mean the PC is on screen, such as `["12:00"]`. |
-| `pi_address` | required | The input the Pi is plugged into. |
+| `pc_addresses` | required with a TV | List of inputs that mean the PC is on screen, such as `["12:00"]`. |
+| `pi_address` | required with a TV | The input the Pi is plugged into. |
 | `soundbar_address` | unset | The TV input the soundbar is on. Used to spot automatic switches and for log names. |
 | `soundbar_pc_audio_address` | unset | The soundbar input carrying the PC's audio, if the PC's picture goes to the TV directly. |
 | `guard_addresses` | `[]` | Extra inputs to treat as automatic switches right after a wake. |
@@ -233,6 +233,7 @@ seconds.
 | `hid_passthrough` | `true` | Forward TV remote buttons to the PC as a USB keyboard. Needs the `--with-hid` install. |
 | `hidg_device` | `"/dev/hidg0"` | The USB keyboard device. |
 | `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
+| `use_tv` | `true` | `false` runs CouchLink without a TV, only to wake the PC for remote play and put it to sleep when asked. No CEC addresses are needed. See [How it works](how-it-works.md#without-a-tv). |
 | `status_page_buttons` | `true` | Wake and sleep buttons on the status page. They need no key, so anyone who can open the page can use them. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
 | `admin_password_hash` | unset | The settings page's password, as a salted hash. Set it with `sudo couchlink --admin-password`. See [Settings page](status-page-and-logs.md#settings-page). |
 

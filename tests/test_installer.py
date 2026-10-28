@@ -13,7 +13,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from helpers import HERE, OLD_CONFIG, QUICK, out
+from helpers import HERE, OLD_CONFIG, QUICK, assert_private, out
 import couchlink
 from couchlink import config
 
@@ -243,7 +243,7 @@ class InstallerTests(unittest.TestCase):
         with open(conf + ".bak") as f:
             self.assertEqual(f.read(), OLD_CONFIG)
         for path in (conf, conf + ".bak"):                       # it holds password and key hashes
-            self.assertEqual(os.stat(path).st_mode & 0o777, 0o600, path)
+            assert_private(self, path)
         with open(conf) as f:
             self.assertIn("watch_pc_power = true", f.read())
 

@@ -7,7 +7,7 @@ import shutil
 import tempfile
 import unittest
 
-from helpers import BASE, Clock, HERE, REAL, Sim, msg, out, page_text
+from helpers import BASE, Clock, HERE, REAL, Sim, assert_private, msg, out, page_text
 import couchlink
 from couchlink import auth, cec, config, controller, power, setup_pc, web
 
@@ -990,7 +990,7 @@ class ActionTests(unittest.TestCase):
         key = lines[0].split(": ", 1)[1]
         text = open(path).read()
         self.assertNotIn(key, text)
-        self.assertEqual(os.stat(path).st_mode & 0o777, 0o600)     # only root can read the hashes
+        assert_private(self, path)     # only root can read the hashes
         settings, problems = config.load_config(path)
         self.assertEqual(problems, [])
         self.assertEqual(settings["api_keys"], {"home-assistant": auth.hash_api_key(key)})

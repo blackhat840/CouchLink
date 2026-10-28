@@ -508,6 +508,10 @@ class Controller:
         params = params if isinstance(params, dict) else {}
         frm = f" from {source}" if source else ""
         t = self.now()
+        if name == "wake" and params.get("tv") and not self.cfg.use_tv:
+            # Refused before the rate limit, so it doesn't hold up a Wake PC right after
+            log("ACTION", f"Wake PC and TV requested{frm}, but CouchLink is set up without a TV")
+            return False, "no_tv", "CouchLink is set up without a TV. Use Wake PC instead"
         if name in ("wake", "sleep"):
             prev = self.last_action.get(name)
             if prev is not None and t - prev < ACTION_COOLDOWN:
@@ -517,9 +521,6 @@ class Controller:
                 return False, "too_soon", f"Wait {ACTION_COOLDOWN} seconds between requests"
             self.last_action[name] = t
         if name == "wake":
-            if params.get("tv") and not self.cfg.use_tv:
-                log("ACTION", f"Wake PC and TV requested{frm}, but CouchLink is set up without a TV")
-                return False, "no_tv", "CouchLink is set up without a TV. Use Wake PC instead"
             return (True,) + self.wake(bool(params.get("tv")), frm)
         if name == "sleep":
             return (True,) + self.request_sleep(frm)

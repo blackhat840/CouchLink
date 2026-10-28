@@ -6,7 +6,7 @@ import shutil
 import tempfile
 import unittest
 
-from helpers import Clock, HERE, msg
+from helpers import Clock, HERE, assert_private, msg
 from couchlink import auth, cec, config, setup_cec, setup_pc
 
 
@@ -134,7 +134,7 @@ class SetupTests(unittest.TestCase):
             text = f.read()
         self.assertNotIn(key, text)
         self.assertNotIn("sofa-console", text)
-        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o600)    # only root can read the hashes
+        assert_private(self, self.path)    # only root can read the hashes
         code, s = self.setup(["", "", "", "", "", "", "", "", "", "", "n"])  # Enter keeps them all
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
         self.assertFalse(s["status_page_buttons"])                    # Enter keeps "n" too
@@ -363,6 +363,7 @@ class CecSetupTests(unittest.TestCase):
         os.chmod(path, 0o755)
         return [path]
 
+    @unittest.skipIf(os.name != "posix", "runs a fake cec-client script")
     def test_cec_scan_runs_cec_client(self):
         command = self.fake_cec_client(
             "assert sys.argv[1:] == ['-s', '-d', '1'], sys.argv\n"
@@ -370,6 +371,7 @@ class CecSetupTests(unittest.TestCase):
             f"print({SCAN_OUTPUT!r})\n")
         self.assertEqual([d["address"] for d in cec.cec_scan(command)], ["00:00", "40:00", "11:00", "10:00"])
 
+    @unittest.skipIf(os.name != "posix", "runs a fake cec-client script")
     def test_cec_watch_returns_the_first_wanted_input(self):
         command = self.fake_cec_client(
             "print('opening a connection to the CEC adapter...', flush=True)\n"
@@ -382,6 +384,7 @@ class CecSetupTests(unittest.TestCase):
         self.assertEqual(addr, "12:00")
         self.assertIn("Listening now", lines[0])
 
+    @unittest.skipIf(os.name != "posix", "runs a fake cec-client script")
     def test_cec_watch_gives_up(self):
         command = self.fake_cec_client("print('waiting for input', flush=True)\ntime.sleep(30)\n")
         self.assertIsNone(cec.cec_watch(command, 1, lambda a: True, out=lambda line: None))

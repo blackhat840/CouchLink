@@ -15,10 +15,28 @@
 
 | File | Purpose |
 |---|---|
-| `couchlink.py` | The program. Installed as `/usr/local/bin/couchlink`. |
+| `couchlink/` | The program. Installed in `/usr/local/lib/couchlink`, with the `couchlink` command in `/usr/local/bin`. |
+| `couchlink/static/` | The status page: its HTML, CSS and JavaScript |
 | `couchlink.example.toml` | Example settings, copied to `/etc/couchlink/config.toml` on first install |
 | `install.sh` | Installer and updater |
-| `test_couchlink.py` | Offline tests. Run with `python3 test_couchlink.py`. `install.sh --test` runs them with `--quick`, which skips the tests of the installer itself. |
+| `tests/` | Offline tests, one file for each part of the program |
+| `test_couchlink.py` | Runs the tests: `python3 test_couchlink.py`. `install.sh --test` runs them with `--quick`, which skips the tests of the installer itself. |
+
+### The program
+
+| Module | What it does |
+|---|---|
+| `controller.py` | All the decisions: which input the TV is on, when to wake and suspend the PC, remote sessions. It owns all state and runs on one thread. |
+| `cec.py` | Talks to the HDMI-CEC bus through `cec-client`, and reads what it prints |
+| `actions.py` | Wake-on-LAN, suspending over SSH, and the dry run |
+| `power.py` | Pinging the PC, and the SSH session that hears it sleep, restart or shut down |
+| `web.py` | The status page and its API |
+| `auth.py` | API keys and lockouts |
+| `config.py` | Settings: defaults, checking, writing and `--migrate-config` |
+| `setup_pc.py`, `setup_cec.py` | `--setup` and `--setup-cec` |
+| `cli.py` | The `couchlink` command |
+
+To run it from a checkout without installing: `python3 -m couchlink --dry-run`.
 | `README.md` | Overview and quick start |
 | `CONTRIBUTING.md` | Rules for changes to this repository |
 | `docs/` | These guides and the status page screenshot |

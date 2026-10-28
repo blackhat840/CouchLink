@@ -3,7 +3,7 @@
 #
 # CouchLink installer and updater for Raspberry Pi OS.
 #
-# install.sh works on its own. If couchlink.py is not next to it, it downloads
+# install.sh works on its own. If the couchlink folder is not next to it, it downloads
 # the latest release from GitHub and installs that:
 #
 #     curl -fsSLO https://raw.githubusercontent.com/blackhat840/CouchLink/main/install.sh
@@ -37,7 +37,8 @@
 # First install:
 #   1. Installs cec-utils and ping
 #   2. With --test, runs the offline tests, without the installer's own tests
-#   3. Installs the program as /usr/local/bin/couchlink
+#   3. Installs the program in /usr/local/lib/couchlink, with the couchlink
+#      command in /usr/local/bin
 #   4. Creates /etc/couchlink/config.toml from the example (never overwrites yours)
 #   5. Installs couchlink.service, left disabled until you've tested
 #   6. With --with-hid: enables USB gadget mode and a keyboard gadget service
@@ -91,6 +92,15 @@ warn() { printf '\033[33mWARNING: %s\033[0m\n' "$*"; }
 die()  { printf '\033[31mERROR: %s\033[0m\n' "$*"; exit 1; }
 run()  { if [ "$TEST_MODE" = 1 ]; then echo "[test mode] skipped: $*"; else "$@"; fi; }
 version_of() { sed -n 's/^VERSION = "\(.*\)"/\1/p' "$1" 2>/dev/null | head -1; }
+# The installed version. Up to 2.6, all of CouchLink was the one file /usr/local/bin/couchlink.
+installed_version() {
+    local v
+    v="$(version_of "$LIB/couchlink/__init__.py")"
+    [ -n "$v" ] || v="$(version_of "$BIN")"
+    printf '%s' "$v"
+}
+# Runs the couchlink package next to this script, for the checks before it is installed.
+new_couchlink() { PYTHONPATH="$HERE" python3 -m couchlink "$@"; }
 have_tty() { (exec </dev/tty) 2>/dev/null; }
 
 # Talks to GitHub with Python's standard library, so nothing extra is needed.
@@ -168,6 +178,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 [ "$TEST_MODE" = 1 ] || [ "$(id -u)" = 0 ] || [ "$LIST" = 1 ] || die "Run with sudo: sudo bash $0 $ALL_ARGS"
 
 BIN="$ROOT/usr/local/bin/couchlink"
+LIB="$ROOT/usr/local/lib/couchlink"
 CONF_DIR="$ROOT/etc/couchlink"
 CONF="$CONF_DIR/config.toml"
 UNIT_DIR="$ROOT/etc/systemd/system"
@@ -200,7 +211,7 @@ fi
 # Download a release when asked to, or when the program files are not next to
 # this script (someone downloaded install.sh on its own).
 HAVE_FILES=0
-[ -f "$HERE/couchlink.py" ] && [ -f "$HERE/couchlink.example.toml" ] && HAVE_FILES=1
+[ -f "$HERE/couchlink/__init__.py" ] && [ -f "$HERE/couchlink.example.toml" ] && HAVE_FILES=1
 INSTALLED=0
 [ -f "$BIN" ] && [ -f "$CONF" ] && INSTALLED=1
 REMOTE=0
@@ -216,7 +227,7 @@ if [ "$REMOTE" = 1 ]; then
         say "CouchLink is already installed, so this updates it"
         UPDATE=1
     fi
-    [ "$INSTALLED" = 0 ] || OLD_VER="$(version_of "$BIN")"
+    [ "$INSTALLED" = 0 ] || OLD_VER="$(installed_version)"
     LATEST=0
     if [ "$PICK" = 1 ]; then
         have_tty || die "No terminal to choose from. Use --release <name> (see --list-releases)."
@@ -259,13 +270,13 @@ if [ "$REMOTE" = 1 ]; then
     exit 0
 fi
 
-[ -f "$HERE/couchlink.py" ] || die "couchlink.py not found next to this script. Run without --local to download it."
+[ -f "$HERE/couchlink/__init__.py" ] || die "The couchlink folder is not next to this script. Run without --local to download it."
 [ -f "$HERE/couchlink.example.toml" ] || die "couchlink.example.toml not found next to this script"
-NEW_VER="$(version_of "$HERE/couchlink.py")"
+NEW_VER="$(version_of "$HERE/couchlink/__init__.py")"
 
 if [ "$UPDATE" = 1 ]; then
     [ -f "$BIN" ] && [ -f "$CONF" ] || die "No existing install found. Run without --update first."
-    OLD_VER="$(version_of "$BIN")"
+    OLD_VER="$(installed_version)"
     if [ "$TEST_MODE" != 1 ]; then
         command -v cec-client >/dev/null || die "cec-client is missing. Run without --update to reinstall packages."
     fi
@@ -310,18 +321,14 @@ MIGRATED=""
 CONFIG_UPDATED=0
 if [ "$UPDATE" = 1 ]; then
     say "Checking your config against the new version"
-    CHECKED="$CONF"
-    if grep -q -- "--migrate-config" "$HERE/couchlink.py"; then
-        # Bring a copy up to date. Yours is only replaced once the new version is installed.
-        MIGRATED="$LOG_DIR/couchlink-migrated.toml"
-        cp "$CONF" "$MIGRATED"
-        python3 "$HERE/couchlink.py" --config "$MIGRATED" --migrate-config \
-            | sed "s|$MIGRATED|your config|g" \
-            || die "Couldn't bring your config up to date, so nothing was changed."
-        rm -f "$MIGRATED.bak"
-        CHECKED="$MIGRATED"
-    fi
-    if python3 "$HERE/couchlink.py" --config "$CHECKED" --check-config > "$CHECK_LOG" 2>&1; then
+    # Bring a copy up to date. Yours is only replaced once the new version is installed.
+    MIGRATED="$LOG_DIR/couchlink-migrated.toml"
+    cp "$CONF" "$MIGRATED"
+    new_couchlink --config "$MIGRATED" --migrate-config \
+        | sed "s|$MIGRATED|your config|g" \
+        || die "Couldn't bring your config up to date, so nothing was changed."
+    rm -f "$MIGRATED.bak"
+    if new_couchlink --config "$MIGRATED" --check-config > "$CHECK_LOG" 2>&1; then
         echo "Config OK with ${NEW_VER:-the new version}"
     else
         grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
@@ -332,8 +339,23 @@ fi
 # ---------------------------------------------------------------- program
 say "Installing CouchLink"
 install -d "$ROOT/usr/local/bin" "$CONF_DIR" "$UNIT_DIR"
-install -m 0755 "$HERE/couchlink.py" "$BIN"
-echo "Installed $BIN (${NEW_VER:-unknown version})"
+rm -rf "$LIB"
+install -d "$LIB"
+cp -R "$HERE/couchlink" "$LIB/"
+find "$LIB" -name __pycache__ -prune -exec rm -rf {} +
+# Compile once now, so the first start on a Pi Zero doesn't have to.
+python3 -m compileall -q "$LIB" >/dev/null || true
+cat > "$BIN.new" <<LAUNCHER
+#!/usr/bin/python3
+# The couchlink command. The program is in ${LIB#$ROOT}.
+import sys
+sys.path.insert(0, "$LIB")
+from couchlink.cli import main
+main()
+LAUNCHER
+chmod 0755 "$BIN.new"
+mv "$BIN.new" "$BIN"
+echo "Installed $LIB (${NEW_VER:-unknown version}) and the couchlink command"
 
 if [ -n "$MIGRATED" ] && ! cmp -s "$MIGRATED" "$CONF"; then
     cp "$CONF" "$CONF.bak"

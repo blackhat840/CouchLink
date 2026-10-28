@@ -44,8 +44,8 @@ Wired Ethernet is the most reliable way to wake the PC. See
    `sudo bash install.sh --with-hid` instead, then reboot when it finishes.
 
    The installer downloads the latest release from GitHub, installs
-   `cec-utils`, installs the program as
-   `/usr/local/bin/couchlink`, creates `/etc/couchlink/config.toml`, and
+   `cec-utils`, installs the program in `/usr/local/lib/couchlink` with the
+   `couchlink` command, creates `/etc/couchlink/config.toml`, and
    installs `couchlink.service` without enabling it. You do not need git or a
    GitHub account. At the end it asks for the settings (see
    [Configuration](configuration.md#the-settings)), then finds the CEC
@@ -176,7 +176,8 @@ diff /etc/couchlink/config.toml /etc/couchlink/config.example.toml
 
 | Path | What it is |
 |---|---|
-| `/usr/local/bin/couchlink` | The program |
+| `/usr/local/lib/couchlink/` | The program |
+| `/usr/local/bin/couchlink` | The `couchlink` command, which runs the program |
 | `/etc/couchlink/config.toml` | Your settings |
 | `/etc/systemd/system/couchlink.service` | The service |
 | `/usr/local/bin/couchlink-hid-gadget.sh` and `couchlink-hid.service` | The USB keyboard, with `--with-hid` only |

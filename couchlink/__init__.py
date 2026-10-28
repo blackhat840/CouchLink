@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """
-CouchLink 2.6
+CouchLink 2.7
 
 Makes a SteamOS or Bazzite gaming PC behave like a console on the TV. Runs on a
 Raspberry Pi on the TV's HDMI-CEC bus and keeps the PC's power state in line
@@ -30,4 +30,4 @@ GPL-2.0-or-later), which it runs as a separate program. See docs/credits.md.
 Run with --help for options. See README.md and docs/ for setup.
 """
 
-VERSION = "2.6"
+VERSION = "2.7"

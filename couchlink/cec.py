@@ -89,6 +89,14 @@ class CecClient:
             stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
         threading.Thread(target=self._reader, daemon=True).start()
 
+    def stop(self):
+        """Close cec-client, so a new CouchLink can open the CEC adapter."""
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            self.proc.kill()
+
     def send(self, command):
         with self.lock:
             self.proc.stdin.write(command + "\n")

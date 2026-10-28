@@ -19,7 +19,7 @@ class ApiTests(unittest.TestCase):
     def start(self, keyed=True, **overrides):
         import queue
         if keyed:
-            overrides["api_key_hash"] = auth.hash_api_key(self.KEY)
+            overrides["api_keys"] = {"home-assistant": auth.hash_api_key(self.KEY)}
         self.sim = Sim(**dict(REAL, **overrides))
         self.sim.pc(False)
         self.sim.ev(msg("5f:81:11:00"))
@@ -173,5 +173,5 @@ class ApiTests(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}/api/wake", timeout=5) as r:
             snap = json.loads(r.read())                 # GET only reads
         self.assertTrue(snap["actions_enabled"])
-        self.assertNotIn("api_key_hash", json.dumps(snap))              # never shown
+        self.assertNotIn("sha256:", json.dumps(snap))                   # key hashes are never shown
         self.assertEqual(self.sim.act.wols, 0)

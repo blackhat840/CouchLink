@@ -9,6 +9,7 @@ import re
 from types import SimpleNamespace
 
 from . import VERSION
+from .auth import KEY_NAME_RE, PASSWORD_RE
 
 
 try:
@@ -52,7 +53,8 @@ DEFAULTS = {
     "hidg_device": "/dev/hidg0",
     "dashboard_port": 8080,             # 0 disables the status page
     "status_page_buttons": True,        # wake and sleep buttons on the status page, no key needed
-    "api_key_hash": "",                 # set by "sudo couchlink --new-api-key". Lets scripts use the API
+    "admin_password_hash": "",          # set by "sudo couchlink --admin-password". The settings page
+    "api_keys": {},                     # the [api_keys] table: name = hash. Lets scripts use the API
 
     # timing (seconds)
     "away_debounce": 5,
@@ -107,16 +109,43 @@ def load_config(path):
         return None, [f"Config file {path} not found (copy couchlink.example.toml there)"]
     except tomllib.TOMLDecodeError as e:
         return None, [f"Config file {path} is not valid TOML: {e}"]
-    flat = {}
-    for key, value in raw.items():          # [sections] are only for readability
-        if isinstance(value, dict):
-            flat.update(value)
-        else:
-            flat[key] = value
+    return settings_from_raw(raw)
+
+
+def settings_from_text(text):
+    """Like load_config, for config text that isn't saved yet."""
+    try:
+        return settings_from_raw(tomllib.loads(text))
+    except tomllib.TOMLDecodeError as e:
+        return None, [f"The config is not valid TOML: {e}"]
+
+
+def settings_from_raw(raw):
+    flat = flatten(raw)
     problems = [f"Unknown setting '{k}' (typo?)" for k in sorted(set(flat) - set(DEFAULTS) - set(REMOVED_SETTINGS))]
     settings = dict(DEFAULTS)
     settings.update({k: v for k, v in flat.items() if k in DEFAULTS})
+    settings["api_keys"] = dict(settings["api_keys"])
+    legacy = flat.get("api_key_hash")       # 2.6's single key, until --migrate-config moves it
+    if legacy and isinstance(settings["api_keys"], dict):
+        settings["api_keys"].setdefault("default", legacy)
     return settings, problems
+
+
+TABLES = {"api_keys"}       # [tables] that hold data. Every other [section] is only for readability
+
+
+def flatten(raw):
+    """The settings in parsed TOML, with [sections] removed."""
+    flat = {}
+    for key, value in raw.items():
+        if key in TABLES:
+            flat[key] = value
+        elif isinstance(value, dict):
+            flat.update(value)
+        else:
+            flat[key] = value
+    return flat
 
 
 def validate(settings):
@@ -177,8 +206,20 @@ def validate(settings):
                             "behind the soundbar, leave soundbar_address unset")
     if not isinstance(s["status_page_buttons"], bool):
         problems.append("status_page_buttons must be true or false")
-    if s["api_key_hash"] and not re.fullmatch(r"sha256:[0-9a-f]{64}", str(s["api_key_hash"])):
-        problems.append("api_key_hash is not valid. Generate a new key with: sudo couchlink --new-api-key")
+    if not isinstance(s["api_keys"], dict):
+        problems.append("[api_keys] must be a table of name = \"sha256:...\" lines")
+    else:
+        for name, hashed in s["api_keys"].items():
+            if not KEY_NAME_RE.fullmatch(name):
+                problems.append(f"API key name {name!r} can only have letters, digits, - and _")
+            elif name in DEFAULTS:
+                problems.append(f"API key name {name!r} is also the name of a setting. Use another name")
+            if not re.fullmatch(r"sha256:[0-9a-f]{64}", str(hashed)):
+                problems.append(f"API key {name} is not valid. Generate a new one with: "
+                                f"sudo couchlink --new-api-key {name}")
+    if s["admin_password_hash"] and not PASSWORD_RE.fullmatch(str(s["admin_password_hash"])):
+        problems.append("admin_password_hash is not valid. Set the password again with: "
+                        "sudo couchlink --admin-password")
     if not isinstance(s["watch_pc_power"], bool):
         problems.append("watch_pc_power must be true or false")
     if s["select_soundbar_audio"] and not s["soundbar_pc_audio_address"]:
@@ -227,7 +268,8 @@ def validate(settings):
 
 def set_config_value(text, key, value):
     """Set key = value in TOML text, keeping its comment and position. A
-    commented-out key is switched on. A missing key is added at the end."""
+    commented-out key is switched on. A missing key is added at the end of the
+    settings, before data tables such as [api_keys]."""
     rendered = json.dumps(value) if isinstance(value, (str, list)) else str(value).lower()
     m = None
     for prefix in (r"", r"#[ \t]*"):       # an active line first, then a commented-out one
@@ -235,6 +277,9 @@ def set_config_value(text, key, value):
         if m:
             break
     if m is None:
+        table = re.search(rf"^[ \t]*\[({'|'.join(TABLES)})\][ \t]*(#.*)?$", text, re.M)
+        if table:
+            return text[:table.start()] + f"{key} = {rendered}\n\n" + text[table.start():]
         return text.rstrip("\n") + f"\n{key} = {rendered}\n"
     indent, pad, _, comment = m.groups()
     line = f"{indent}{key}{pad}= {rendered}"
@@ -242,6 +287,51 @@ def set_config_value(text, key, value):
         column = m.start(4) - m.start() + len(comment) - len(comment.lstrip())
         line = line.ljust(column - 1) + " " + comment.lstrip()
     return text[:m.start()] + line + text[m.end():]
+
+
+def write_private(path, text):
+    """Write a file only root can read. The config holds password and key hashes."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    os.chmod(path, 0o600)       # in case it already existed with other permissions
+
+
+def save_config(path, old, new):
+    """Write new to path, keeping old as path.bak. Both readable by root only."""
+    write_private(path + ".bak", old)
+    write_private(path, new)
+
+
+def api_keys_section(lines):
+    """(start, end) of the [api_keys] lines, or None. end is just past the last line."""
+    start = next((i for i, l in enumerate(lines) if re.match(r"\s*\[api_keys\]\s*(#.*)?$", l)), None)
+    if start is None:
+        return None
+    end = next((i for i in range(start + 1, len(lines)) if re.match(r"\s*\[", lines[i])), len(lines))
+    return start, end
+
+
+def set_api_key(text, name, hashed):
+    """Add or replace one key in [api_keys]. The section is added if needed."""
+    line = f'{name} = "{hashed}"'
+    lines = text.split("\n")
+    section = api_keys_section(lines)
+    if section:
+        for i in range(*section):
+            if re.match(rf"\s*{re.escape(name)}\s*=", lines[i]):
+                lines[i] = line
+                return "\n".join(lines)
+    return add_to_section(text, "api_keys", line)
+
+
+def remove_api_key(text, name):
+    lines = text.split("\n")
+    section = api_keys_section(lines)
+    if section:
+        lines = [l for i, l in enumerate(lines)
+                 if not (section[0] < i < section[1] and re.match(rf"\s*{re.escape(name)}\s*=", l))]
+    return "\n".join(lines)
 
 
 def unset_config_value(text, key):
@@ -253,6 +343,7 @@ RENAMED_SETTINGS = {}       # old name: new name, for settings renamed in a late
 
 
 REMOVED_SETTINGS = {       # name: why, for settings a later version dropped
+    "api_key_hash": "API keys have names now. This one is in [api_keys] as the key named default",
     "remote_session_hours": "remote sessions no longer end on a timer. They end when the PC goes to "
                             "sleep by itself, or with End remote session or Put PC to sleep",
 }
@@ -304,10 +395,14 @@ def migrate_config_text(text, example_text):
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
         return text, [], [f"The config is not valid TOML, so it was not changed: {e}"]
-    flat = {}
-    for key, value in raw.items():
-        flat.update(value if isinstance(value, dict) else {key: value})
+    flat = flatten(raw)
     changes = []
+
+    legacy = flat.get("api_key_hash")
+    if legacy and "default" not in (flat.get("api_keys") or {}):
+        text = set_api_key(text, "default", legacy)
+        flat.setdefault("api_keys", {})["default"] = legacy
+        changes.append("Moved api_key_hash to [api_keys] as the key named default. It keeps working")
 
     for key in sorted(set(flat) - set(DEFAULTS)):
         line_re = re.compile(KEY_LINE.format(key=re.escape(key)), re.M)
@@ -347,9 +442,7 @@ def migrate_config_text(text, example_text):
     problems = []
     try:
         settings = dict(DEFAULTS)
-        new = tomllib.loads(text)
-        for key, value in new.items():
-            settings.update(value if isinstance(value, dict) else {key: value})
+        settings.update({k: v for k, v in flatten(tomllib.loads(text)).items() if k in DEFAULTS})
         problems = validate(settings)[1]
     except tomllib.TOMLDecodeError as e:
         problems = [f"The migrated config is not valid TOML: {e}"]
@@ -379,10 +472,7 @@ def migrate_config(path, dry_run=False, out=print):
             out(f"  - {c}")
         if not dry_run:
             try:
-                with open(path + ".bak", "w") as f:
-                    f.write(text)
-                with open(path, "w") as f:
-                    f.write(new)
+                save_config(path, text, new)
             except PermissionError:
                 out(f"Can't write {path}. Run it with sudo.")
                 return 1

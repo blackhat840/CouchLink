@@ -1,18 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """sudo couchlink --setup: the settings that don't need CEC addresses, the SSH
-key, and --new-api-key."""
+key and the settings page's password, plus --new-api-key and --admin-password."""
 
+import getpass
 import os
 import re
-import secrets
 import socket
 import subprocess
 import time
 
 from .actions import send_magic_packet
-from .auth import hash_api_key
+from .admin import MIN_PASSWORD
+from .auth import KEY_NAME_RE, hash_api_key, hash_password
+from .auth import new_api_key as generate_key
 from .common import DOCS_URL
-from .config import DEFAULTS, load_config, set_config_value, validate
+from .config import DEFAULTS, load_config, save_config, set_api_key, set_config_value, validate
 from .setup_cec import couchlink_service
 
 
@@ -22,32 +24,71 @@ PLACEHOLDERS = {"target-pc.local", "aa:bb:cc:dd:ee:ff"}
 MAC_RE = re.compile(r"([0-9a-f]{2}[:-]){5}[0-9a-f]{2}", re.IGNORECASE)
 
 
-def show_api_key(key, path, out):
-    out(f"New API key: {key}")
+def show_api_key(key, name, path, out):
+    out(f"New API key {name}: {key}")
     out("")
     out(f"Copy it now. Only a hash of it is saved in {path}, so it can't be shown again.")
-    out("Generating another key replaces it, and the old one stops working.")
+    out(f"Generating another key named {name} replaces it. Keys with other names keep working.")
     out("Scripts send it as:")
     out("  Authorization: Bearer <key>")
 
 
-def new_api_key(path, out=print):
-    """Generate a new API key, save its hash to the config and show the key once."""
+def new_api_key(path, name="default", out=print):
+    """Generate an API key with a name, save its hash to the config and show the key once."""
+    if not KEY_NAME_RE.fullmatch(name) or name in DEFAULTS:
+        out("Use a name of letters, digits, - and _, such as home-assistant, that isn't a setting's name.")
+        return 1
     try:
         with open(path) as f:
             text = f.read()
     except FileNotFoundError:
         out(f"{path} not found. Run the installer first.")
         return 1
-    key = secrets.token_urlsafe(24)
+    key = generate_key()
     try:
-        with open(path, "w") as f:
-            f.write(set_config_value(text, "api_key_hash", hash_api_key(key)))
+        save_config(path, text, set_api_key(text, name, hash_api_key(key)))
     except PermissionError:
-        out(f"Can't write {path}. Run it with sudo: sudo couchlink --new-api-key")
+        out(f"Can't write {path}. Run it with sudo: sudo couchlink --new-api-key {name}")
         return 1
-    show_api_key(key, path, out)
+    show_api_key(key, name, path, out)
     out("Restart CouchLink to use it: sudo systemctl restart couchlink")
+    out("Keys generated on the settings page work straight away.")
+    return 0
+
+
+def ask_password(secret, out):
+    """Ask for a new password twice. Returns it, or None if the user gave up."""
+    for _ in range(3):
+        first = secret("New password for the settings page: ")
+        if len(first) < MIN_PASSWORD:
+            out(f"Use at least {MIN_PASSWORD} characters.")
+            continue
+        if secret("The same password again: ") != first:
+            out("The two didn't match.")
+            continue
+        return first
+    return None
+
+
+def set_admin_password(path, out=print, secret=getpass.getpass):
+    """sudo couchlink --admin-password: set the settings page's password."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        out(f"{path} not found. Run the installer first.")
+        return 1
+    password = ask_password(secret, out)
+    if password is None:
+        out("The password was not changed.")
+        return 1
+    try:
+        save_config(path, text, set_config_value(text, "admin_password_hash", hash_password(password)))
+    except PermissionError:
+        out("Run it with sudo: sudo couchlink --admin-password")
+        return 1
+    out("Saved. Open the settings page at http://<pi>:8080/admin and log in.")
+    out("It works straight away. Anyone logged in on another device has to log in again.")
     return 0
 
 
@@ -139,7 +180,7 @@ def setup_ssh_key(host, user, out):
 
 
 def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_ssh_key,
-              pc_check=pc_answers, waker=None, service=None):
+              pc_check=pc_answers, waker=None, service=None, secret=getpass.getpass):
     """Ask for the settings that don't need CEC addresses and write them to the config."""
     try:
         with open(path) as f:
@@ -159,6 +200,9 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
             if answer and (check is None or check(answer)):
                 return answer
             out(error or "Please enter a value.")
+
+    def yes(question, default):
+        return prompt(question, default, lambda a: a.lower() in ("y", "n"), "Enter y or n.").lower() == "y"
 
     def known(key):
         value = current.get(key)
@@ -223,27 +267,44 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
                      lambda a: a.lower() in ("y", "n"), "Enter y or n.").lower() == "y"
 
     out("")
+    out("The settings page, at /admin, lets you change settings and API keys from a browser.")
+    out("It needs a password.")
+    has_password = bool(current.get("admin_password_hash"))
+    password = None
+    if yes("Change the settings page's password? (y/n)" if has_password
+           else "Set a password for the settings page now? (y/n)", "n" if has_password else "y"):
+        password = ask_password(secret, out)
+        if password is None:
+            out("Skipped. Set it later with: sudo couchlink --admin-password")
+
+    out("")
     out("Scripts, phone shortcuts and Home Assistant can wake the PC and put it to sleep through")
-    out("CouchLink's API. They need an API key. The status page's buttons don't.")
-    question = ("An API key already exists. Generate a new one? The old one stops working. (y/n)"
-                if current.get("api_key_hash") else "Generate an API key now? (y/n)")
-    api_key = None
-    if prompt(question, "n", lambda a: a.lower() in ("y", "n"), "Enter y or n.").lower() == "y":
-        api_key = secrets.token_urlsafe(24)
+    out("CouchLink's API, with an API key. Each key has a name, so you can revoke one without")
+    out("touching the others. The status page's buttons don't need a key.")
+    existing = sorted(current.get("api_keys") or {})
+    if existing:
+        out(f"Keys you have: {', '.join(existing)}")
+    api_key = key_name = None
+    if yes("Generate a new API key now? (y/n)", "n"):
+        key_name = prompt("Name for the key", "home-assistant",
+                          lambda a: KEY_NAME_RE.fullmatch(a) and a not in DEFAULTS,
+                          "Use letters, digits, - and _, such as home-assistant.")
+        if key_name in existing:
+            out(f"This replaces the key named {key_name}, and the old one stops working.")
+        api_key = generate_key()
 
     original = text
     for key, value in (("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")),
                        ("ssh_user", user), ("pc_name", name or None),
                        ("auto_switch_on_pc_wake", wake_mode), ("on_pc_sleep", sleep_mode),
                        ("status_page_buttons", buttons),
-                       ("api_key_hash", hash_api_key(api_key) if api_key else None)):
+                       ("admin_password_hash", hash_password(password) if password else None)):
         if value is not None:
             text = set_config_value(text, key, value)
+    if api_key:
+        text = set_api_key(text, key_name, hash_api_key(api_key))
     try:
-        with open(path + ".bak", "w") as f:
-            f.write(original)
-        with open(path, "w") as f:
-            f.write(text)
+        save_config(path, original, text)
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup")
         return 1
@@ -251,7 +312,7 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
     out(f"Saved to {path}. The previous version is in {path}.bak.")
     if api_key:
         out("")
-        show_api_key(api_key, path, out)
+        show_api_key(api_key, key_name, path, out)
 
     out("")
     out("The Pi needs an SSH key the PC trusts, so it can put the PC to sleep.")

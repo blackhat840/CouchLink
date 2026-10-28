@@ -45,7 +45,7 @@ watch_pc_power = true                # hear whether the PC sleeps, restarts or s
 hid_passthrough = true               # needs the installer's --with-hid option
 dashboard_port = 8080                # status page, 0 turns it off
 status_page_buttons = true           # wake and sleep buttons on the status page, no key needed
-# api_key_hash = ""                 # set by: sudo couchlink --new-api-key (lets scripts use the API)
+# admin_password_hash = ""          # set by: sudo couchlink --admin-password (the settings page)
 
 [timing]
 away_debounce = 5                    # seconds off the PC's input before suspending
@@ -57,3 +57,8 @@ pc_sleep_confirm = 12                # seconds offline before the PC counts as a
 
 [diagnostics]
 raw_debug = true                     # log raw CEC traffic, turn off once everything works
+
+[api_keys]
+# Keys for scripts and Home Assistant, one per line: name = "sha256:...". Only
+# hashes are kept here. Generate keys on the settings page (/admin), or with:
+#   sudo couchlink --new-api-key home-assistant

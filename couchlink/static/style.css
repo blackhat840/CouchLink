@@ -229,3 +229,38 @@ footer a { color: var(--muted); }
   .line > span { margin-right: 8px; }
   .line .lv { display: inline-block; width: auto; }
 }
+
+/* the settings page */
+.back, .linkish { font: 600 12px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.linkish { appearance: none; background: none; border: 0; cursor: pointer; padding: 0; min-height: 44px; }
+.back:hover, .linkish:hover { color: var(--text); }
+.linkish[hidden], .form-panel[hidden], #panels[hidden] { display: none; }
+.form-panel { padding: 20px 22px; margin-bottom: 14px; }
+.form-panel h1 { margin: 0 0 10px; font-size: 18px; letter-spacing: 0.04em; }
+.form-panel p { margin: 0 0 14px; line-height: 1.5; }
+.form-panel code { font: 13px var(--mono); color: var(--text); }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 10px; }
+fieldset { border: 1px solid var(--panel-edge); border-radius: 12px; margin: 0 0 12px; padding: 12px 14px 4px; }
+legend { padding: 0 6px; font: 600 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--violet); }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.field.check { flex-direction: row; align-items: center; gap: 10px; }
+.field label, .stack > label { color: var(--muted); font-size: 14px; }
+.form-panel input:not([type="checkbox"]), .form-panel select {
+  min-height: 44px; width: 100%; max-width: 32rem; padding: 0 12px; border-radius: 10px;
+  font: 14px var(--mono); color: var(--text); background: rgba(8, 12, 20, 0.6); border: 1px solid var(--panel-edge);
+}
+.form-panel input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--cyan); }
+.form-panel input:focus-visible, .form-panel select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.row input { flex: 1 1 14rem; }
+.problems { margin: 12px 0 0; padding: 10px 14px 10px 30px; border-radius: 10px; background: #2a1414;
+  border: 1px solid var(--red); color: #fecaca; font-size: 14px; line-height: 1.5; }
+.problems[hidden] { display: none; }
+.keys { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.keys li { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 8px 8px 14px; border-radius: 10px; border: 1px solid var(--panel-edge); }
+.newkey { margin-top: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--cyan);
+  background: rgba(34, 211, 238, 0.06); }
+.newkey[hidden] { display: none; }
+.newkey code { word-break: break-all; font-size: 14px; color: var(--cyan); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

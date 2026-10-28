@@ -1,6 +1,6 @@
 # How it works
 
-What CouchLink does in detail, the layout it was built on, the rule it enforces, the CEC messages it listens for, and remote sessions.
+What CouchLink does in detail, the layout it was built on, the rule it enforces, the CEC messages it listens for, remote sessions, and running without a TV.
 
 ## Why this exists
 
@@ -25,10 +25,13 @@ you switched inputs or turned the TV off.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
 - **Keeps the PC awake for remote play.** A [remote session](#remote-sessions)
-  keeps the PC awake without the TV, for streaming to another device.
+  keeps the PC awake without the TV, for streaming to another device. It can
+  also run with [no TV at all](#without-a-tv).
 - **Takes requests** from the wake and sleep buttons on the status page, and
   from scripts and Home Assistant through an API with a key. See
   [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons).
+- **A settings page** with a password, to change settings and API keys from a
+  browser. See [Settings page](status-page-and-logs.md#settings-page).
 - **Optional:** forwards TV remote buttons to the PC as a USB keyboard.
 - **Safe to try:** a dry-run mode that watches and logs without changing
   anything, a small status page, and offline tests.

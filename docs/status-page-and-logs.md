@@ -24,7 +24,11 @@ It shows:
   restarts, the sleep check shows "On hold".
 - The wake and sleep buttons, if they are turned on. See below.
 - Recent events and raw CEC traffic, each in its own tab.
-- Links to the raw JSON and to this repository.
+- Links to the raw JSON, the settings page and this repository.
+
+[Without a TV](how-it-works.md#without-a-tv), the page shows only the PC: its
+state, the buttons, Wake-on-LAN, suspend and the events. The TV's tiles, the
+path and the CEC traffic tab are hidden.
 
 If the page loses contact with CouchLink, for example because the Pi is off,
 it dims everything and says when it last heard from it. It comes back by
@@ -50,7 +54,7 @@ Each button shows only when it would do something:
 | Button | What it does |
 |---|---|
 | Wake PC | Starts a [remote session](how-it-works.md#remote-sessions). The PC wakes and stays awake, and the TV is left alone. |
-| Wake PC and TV | Turns the TV on, switches it to the PC and wakes the PC, like waking it with a controller. |
+| Wake PC and TV | Turns the TV on, switches it to the PC and wakes the PC, like waking it with a controller. Not shown without a TV. |
 | End remote session | Ends the session. If the TV is on another input, the PC is suspended after `away_debounce`. |
 | Put PC to sleep | Suspends the PC over SSH and ends any session. If the TV is on the PC, `on_pc_sleep` runs as if the PC went to sleep by itself. |
 
@@ -112,8 +116,8 @@ revoke them. The log names the key each request used, such as
 | `POST /api/sleep` | Put PC to sleep |
 | `POST /api/session/end` | End remote session |
 
-Scripts send the key in an `Authorization` header. The body is optional, and when there
-is one it must be a JSON object:
+Scripts send the key in an `Authorization` header. The body is optional, and
+when there is one it must be a JSON object:
 
 ```bash
 curl -X POST -H "Authorization: Bearer <key>" -d '{"tv": false}' http://<pi>:8080/api/wake
@@ -122,7 +126,7 @@ curl -X POST -H "Authorization: Bearer <key>" -d '{"tv": false}' http://<pi>:808
 Each answer is JSON, such as:
 
 ```json
-{"ok": true, "result": "session_started", "message": "Remote session started: keeping the PC awake for 4h without the TV"}
+{"ok": true, "result": "session_started", "message": "Remote session started: keeping the PC awake without the TV until it goes to sleep or the session is ended"}
 ```
 
 | `result` | Meaning |
@@ -133,6 +137,7 @@ Each answer is JSON, such as:
 | `suspending` | The PC is being put to sleep |
 | `already_asleep` | The PC is not reachable, so nothing was sent |
 | `session_ended`, `no_session` | The session ended, or none was running |
+| `no_tv` | HTTP 400. Wake PC and TV was asked for, but CouchLink runs without a TV |
 | `too_soon` | HTTP 429. Only one wake, and one sleep, is accepted every 10 seconds |
 | `bad_key` | HTTP 401. The key is missing or wrong |
 | `locked_out` | HTTP 429. 5 wrong keys from one address lock it out for a minute |

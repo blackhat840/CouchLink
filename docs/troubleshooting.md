@@ -7,7 +7,7 @@ Common problems, what to check, and the known limitations.
 | Problem | What to check |
 |---|---|
 | The service exits straight away | Run `--check-config`. It lists every problem. |
-| `Unknown setting` errors | The installed script is older than your config, or the setting has a typo. Run the installer with `--update`, or run `sudo couchlink --migrate-config` to fix typos and old settings. |
+| `Unknown setting` errors | The installed version is older than your config, or the setting has a typo. Run the installer with `--update`, or run `sudo couchlink --migrate-config` to fix typos and old settings. |
 | `scan` shows no devices, or `--setup-cec` says no CEC devices answered | CEC is off in the TV's settings, or the Pi was not connected to the TV at boot. Reboot with the TV connected. |
 | `--setup-cec` does not hear the switch to the PC | Your TV may not announce input changes. Type the input number when it asks. If the PC is already on screen, switch away first, then back. |
 | No input changes are logged | Turn on `raw_debug` and look at what your TV sends when you switch. Make sure `watch_routing_messages` is on. |
@@ -29,9 +29,9 @@ Common problems, what to check, and the known limitations.
 | The settings page says to set a password first | Set one with `sudo couchlink --admin-password`. |
 | After saving settings, the page waits | CouchLink restarts to use them, which takes a few seconds, longer on a Pi Zero. If it doesn't come back, check `sudo journalctl -u couchlink.service -n 50`. A wrong value isn't saved, so a restart doesn't fail because of one. |
 | The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
-| The TV turns on when you wake the PC to stream | The PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. |
-| The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. |
-| Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 644 <file> /etc/couchlink/config.toml`. |
+| The TV turns on when you wake the PC to stream | With a TV, this means the PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. If you never use the TV with the PC, run CouchLink [without a TV](how-it-works.md#without-a-tv). |
+| The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. Without a TV, check the PC's own sleep timer. |
+| Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 600 <file> /etc/couchlink/config.toml`. The config is readable by root only, because it holds password and key hashes. |
 
 ## Known limitations
 
@@ -55,15 +55,15 @@ Common problems, what to check, and the known limitations.
   power-off. Wired Ethernet is much more reliable.
 - **Remote buttons only reach the Pi** if the TV sends them to it. That
   depends on the TV accepting the Pi as the active source.
-- **Only CouchLink can start a remote session.** Waking the PC any other way,
-  such as with Moonlight's own Wake-on-LAN, looks the same as a controller
-  wake, so the TV turns on.
+- **Only CouchLink can start a remote session.** With a TV, waking the PC any
+  other way, such as with Moonlight's own Wake-on-LAN, looks the same as a
+  controller wake, so the TV turns on. Without a TV, the PC is left alone.
 - **Security.** The Pi holds an SSH key that can log in to the PC. The sudoers
   rule limits it to the suspend command. The status page and its wake and sleep
   buttons have no login. Scripts need an API key, and the settings page needs
   a password. CouchLink serves plain HTTP, so passwords and keys cross the
-  network unencrypted. Keep the Pi on a trusted network, and use a VPN to reach it from
-  outside the home.
+  network unencrypted. Keep the Pi on a trusted network, and use a VPN to reach
+  it from outside the home.
 
 ---
 

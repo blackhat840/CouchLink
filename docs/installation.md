@@ -9,7 +9,7 @@ Setting up CouchLink on the Raspberry Pi, testing it, and keeping it up to date.
 | Raspberry Pi | Any model with HDMI. The optional USB keyboard needs USB gadget support (Pi Zero, Zero W, Zero 2 W, Pi 4). Developed on a Pi Zero W. |
 | Raspberry Pi OS Lite | Bookworm or newer, for Python 3.11+. Use the 32-bit image on a Zero W. |
 | HDMI cable | Mini HDMI for the Zero family. |
-| A CEC-capable TV | CEC must be enabled in the TV's settings. Brands call it different names, such as Anynet+, Bravia Sync, SimpLink or just CEC. |
+| A CEC-capable TV | CEC must be enabled in the TV's settings. Brands call it different names, such as Anynet+, Bravia Sync, SimpLink or just CEC. Not needed if you only want [remote play without a TV](how-it-works.md#without-a-tv). |
 | A gaming PC | SteamOS, Bazzite or a similar distro. See [Hardware and systems](hardware.md). |
 | A network | The Pi and the PC on the same LAN. |
 
@@ -51,14 +51,15 @@ Wired Ethernet is the most reliable way to wake the PC. See
    [Configuration](configuration.md#the-settings)), then finds the CEC
    addresses with you (see
    [Finding your CEC addresses](configuration.md#finding-your-cec-addresses)),
-   and prints the next steps.
+   and prints the next steps. If you answer that the Pi isn't plugged into a
+   TV, it skips the CEC addresses.
 
    If you prefer git, `git clone https://github.com/blackhat840/CouchLink.git`,
    then `cd CouchLink` and `sudo bash install.sh` installs the files from the
    clone instead.
 
-5. **Find your CEC addresses**, if you skipped it in step 4. Turn the TV on,
-   then run `sudo bash install.sh --setup-cec`. See
+5. **Find your CEC addresses**, if you skipped it in step 4 and use a TV.
+   Turn the TV on, then run `sudo bash install.sh --setup-cec`. See
    [Configuration](configuration.md#finding-your-cec-addresses).
 
 6. **Prepare the PC** so the Pi can wake it and put it to sleep. See
@@ -123,8 +124,10 @@ sudo systemctl disable --now couchlink.service
 | `sudo couchlink --new-api-key NAME` | Generates an API key for scripts and Home Assistant, such as `--new-api-key home-assistant` |
 | `sudo nano /etc/couchlink/config.toml` | Edits any setting by hand. See [Configuration](configuration.md). |
 
-Restart CouchLink after a change: `sudo systemctl restart couchlink`.
-`--setup-cec` stops and starts it by itself.
+After `--setup`, `--new-api-key` or editing the file, restart CouchLink to use
+the change: `sudo systemctl restart couchlink`. The settings page and
+`--setup-cec` restart it by themselves, and keys made on the settings page
+work straight away.
 
 ## Updating
 
@@ -151,15 +154,19 @@ An update does the following, in order:
 2. Skips the package step.
 3. Brings a copy of your config up to date for the new version and checks
    it. See [Updating an older config](configuration.md#updating-an-older-config).
-4. Installs the new script.
+4. Installs the new version.
 5. Restarts the service if it is running.
 
-If the config check fails, or the tests fail with `--test`, nothing is changed and the installed
-version keeps running. Installing a release older than the installed version
+If the config check fails, or the tests fail with `--test`, nothing is changed
+and the installed version keeps running. Installing a release older than the installed version
 asks you to confirm. If the installed version is already the latest release,
 nothing happens.
 
 Releases are downloaded from GitHub over HTTPS. They are not signed.
+
+Up to 2.6, all of CouchLink was the one file `/usr/local/bin/couchlink`. From
+2.7 the program is in `/usr/local/lib/couchlink`, and that file is a small
+command that runs it. Updating from an older version moves it there by itself.
 
 `install.sh` from version 2.2 and earlier does not download releases. Its
 `--update` installs the files next to it. Run `git pull` once to get the new
@@ -180,7 +187,7 @@ diff /etc/couchlink/config.toml /etc/couchlink/config.example.toml
 |---|---|
 | `/usr/local/lib/couchlink/` | The program |
 | `/usr/local/bin/couchlink` | The `couchlink` command, which runs the program |
-| `/etc/couchlink/config.toml` | Your settings |
+| `/etc/couchlink/config.toml` | Your settings, readable by root only |
 | `/etc/systemd/system/couchlink.service` | The service |
 | `/usr/local/bin/couchlink-hid-gadget.sh` and `couchlink-hid.service` | The USB keyboard, with `--with-hid` only |
 

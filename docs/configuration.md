@@ -91,6 +91,8 @@ sudo bash install.sh --setup
 - the PC's IP address, and finds the PC's MAC address for you
 - the SSH user
 - a name for the PC on the status page
+- whether the Pi is plugged into a TV. If not, it skips the next two questions
+  and the CEC addresses. See [Without a TV](how-it-works.md#without-a-tv).
 - what to do when the PC wakes by itself, for example from a controller
 - what to do when the PC goes to sleep by itself
 - whether to show the [wake and sleep buttons](status-page-and-logs.md#wake-and-sleep-buttons)
@@ -99,12 +101,13 @@ sudo bash install.sh --setup
 - whether to generate an [API key](status-page-and-logs.md#api), with a name, for scripts
   and Home Assistant
 
+Press Enter to keep the value in brackets. It keeps the comments in the file
+and saves the previous version as `config.toml.bak`.
+
 Then it offers to set up the SSH key (step 5 of
 [Preparing the PC](preparing-the-pc.md)). If the PC is asleep, it offers to
 wake it first, and pauses `couchlink.service` so the PC isn't put back to
-sleep. If SSH fails, it says why and what to do. Press Enter to keep the value in
-brackets. It keeps the comments in the file and saves the previous version as
-`config.toml.bak`.
+sleep. If SSH fails, it says why and what to do.
 
 ### Updating an older config
 
@@ -150,8 +153,8 @@ keeps working, and the next update moves that key here as `default`.
 
 ### Editing the file
 
-The CEC addresses, and any other setting, go in the file itself. It belongs
-to root, so edit it with:
+The CEC addresses, and any other setting, go in the file itself. Only root can
+read it, because it holds password and key hashes, so edit it with:
 
 ```bash
 sudo nano /etc/couchlink/config.toml

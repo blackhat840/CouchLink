@@ -13,11 +13,18 @@ assistants alike.
 
 ## Attribution
 
-- Do not credit or mention AI assistants or the tools that run them anywhere:
-  not in files, commit messages, commit trailers, branch names, pull
-  requests, release notes or comments. This includes co-author lines,
-  "generated with" lines and session links.
-- Commits use the maintainer's identity.
+- Do not credit or mention AI assistants or the tools that run them anywhere.
+  That covers:
+  - files, including code comments, docs and file names
+  - commit messages and commit trailers, including co-author lines
+  - branch names and tags
+  - issues, pull requests, reviews and their comments
+  - releases and release notes
+  - GitHub's contributor list
+- This includes "generated with" lines, footers and session links. If a tool
+  adds one by itself, remove it.
+- Commits use the maintainer's identity, so no one else ever appears as an
+  author, co-author or contributor.
 - Do not add personal names, account names or copyright lines to files. The
   license is in [LICENSE](LICENSE).
 

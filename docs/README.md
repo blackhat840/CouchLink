@@ -17,7 +17,7 @@
 |---|---|
 | `couchlink/` | The program. Installed in `/usr/local/lib/couchlink`, with the `couchlink` command in `/usr/local/bin`. |
 | `couchlink/static/` | The status page and the settings page: their HTML, CSS and JavaScript |
-| `couchlink.example.toml` | Example settings, copied to `/etc/couchlink/config.toml` on first install |
+| `couchlink.example.toml` | Example settings, copied to `/etc/couchlink/config.toml` on first install. The password and API key hashes go in `/etc/couchlink/secrets.toml` instead. |
 | `install.sh` | Installer and updater |
 | `tests/` | Offline tests, one file for each part of the program |
 | `test_couchlink.py` | Runs the tests: `python3 test_couchlink.py`. `install.sh --test` runs them with `--quick`, which skips the tests of the installer itself. |

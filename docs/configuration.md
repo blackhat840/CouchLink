@@ -150,8 +150,9 @@ sleep. If SSH fails, it says why and what to do.
 ### Advanced: editing the file
 
 Every setting can go in the file itself, including the ones the settings page
-doesn't have. Only root can read it, because it holds password and key
-hashes, so edit it with:
+doesn't have. Anyone can read it, because it holds no secrets. The settings
+page's password and the API keys are in `secrets.toml`, next to it, which only
+root can read. Edit the config with:
 
 ```bash
 sudo nano /etc/couchlink/config.toml
@@ -218,20 +219,40 @@ It explains every change it makes:
 Things only you can fill in, such as the CEC addresses, are listed at the end.
 The previous version of the file is saved as `config.toml.bak`.
 
-### API keys
+### The password and API keys
 
-Keys for scripts and Home Assistant are in their own table at the end of the
-file, one per line, with only a hash of each key:
+The settings page's password and the keys for scripts and Home Assistant are
+kept in `/etc/couchlink/secrets.toml`, which only root can read. It holds only
+hashes, never the password or the keys themselves:
 
 ```toml
+admin_password_hash = "pbkdf2_sha256$..."
+
 [api_keys]
 home-assistant = "sha256:..."
 phone = "sha256:..."
 ```
 
-Generate and revoke them on the settings page, or generate one with
-`sudo couchlink --new-api-key NAME`. A config from 2.6 with `api_key_hash`
-keeps working, and the next update moves that key here as `default`.
+Change them on the settings page, or with `sudo couchlink --admin-password`
+and `sudo couchlink --new-api-key NAME`, rather than by hand.
+
+Older versions kept them in `config.toml`. Updating moves them, and so does
+`sudo couchlink --migrate-config`. Each moved line in `config.toml` is
+commented out, without its hash. Until they're moved, CouchLink keeps using
+them from `config.toml` and logs a warning at startup. If both files have a
+password or a key with the same name, the one in `secrets.toml` is used.
+A config from 2.6 with `api_key_hash` keeps working too, and moves to
+`secrets.toml` as the key named `default`.
+
+### Sharing your config in a bug report
+
+```bash
+sudo couchlink --share-config
+```
+
+This prints `config.toml` with the PC's IP address, MAC address and
+`wol_broadcast` hidden, and the CouchLink version at the top. Paste it into the
+issue.
 
 ## Settings reference
 
@@ -279,7 +300,7 @@ seconds.
 | `dashboard_port` | `8080` | Port for the status page. `0` turns it off. |
 | `use_tv` | `true` | `false` runs CouchLink without a TV, only to wake the PC for remote play and put it to sleep when asked. No CEC addresses are needed. See [How it works](how-it-works.md#without-a-tv). |
 | `status_page_buttons` | `true` | Wake and sleep buttons on the status page. They need no key, so anyone who can open the page can use them. See [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). |
-| `admin_password_hash` | unset | The settings page's password, as a salted hash. Set it with `sudo couchlink --admin-password`. See [Settings page](status-page-and-logs.md#settings-page). |
+| `admin_password_hash` | unset | The settings page's password, as a salted hash. It's in `secrets.toml`, not `config.toml`. Set it with `sudo couchlink --admin-password`. See [The password and API keys](#the-password-and-api-keys). |
 
 ### Timing
 

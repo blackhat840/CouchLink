@@ -14,7 +14,7 @@ from .cec import CecClient, NoCec
 from . import common
 from .auth import make_setup_code, read_setup_code
 from .common import DEFAULT_CONFIG_PATH, EX_CONFIG, LOG_RING, log
-from .config import load_config, migrate_config, validate
+from .config import hide_for_sharing, load_config, migrate_config, secrets_warning, validate
 from .controller import Controller
 from .power import pinger, power_watcher
 from .setup_cec import run_cec_setup
@@ -62,6 +62,36 @@ def show_setup_code(path):
     print(f"Setup code: {code}")
     print("Open http://<pi>:8080/admin, enter the code and choose a password.")
     return 0
+
+
+def share_config(path, out=print):
+    """couchlink --share-config: config.toml for a bug report, with the PC's addresses hidden."""
+    try:
+        with open(path) as f:
+            text = f.read()
+    except FileNotFoundError:
+        out(f"{path} not found. Run the installer first.")
+        return 1
+    except PermissionError:
+        out("Run it with sudo: sudo couchlink --share-config")
+        return 1
+    out(f"# CouchLink {VERSION}. {path}, from couchlink --share-config, with the PC's addresses hidden.")
+    out(hide_for_sharing(text).rstrip("\n"))
+    return 0
+
+
+def check_config_lines(cfg):
+    """--check-config's lines: every setting, with the password and keys as set or not set."""
+    lines = []
+    for k, v in sorted(vars(cfg).items()):
+        if k == "admin_password_hash":
+            v = "set" if v else "not set"
+        elif k == "api_keys":
+            v = ", ".join(f"{name} (set)" for name in sorted(v)) or "not set"
+        else:
+            v = repr(v)
+        lines.append(f"{k} = {v}")
+    return lines
 
 
 def run_setup_mode(cfg, problems, args):
@@ -117,7 +147,11 @@ def main(argv=None):
                     help="show the one-time code that sets the settings page's first password")
     ap.add_argument("--setup-ssh", action="store_true",
                     help="give the Pi an SSH key the PC trusts, so it can put the PC to sleep")
+    ap.add_argument("--share-config", action="store_true",
+                    help="print the config with the PC's addresses hidden, to paste into a bug report")
     args = ap.parse_args(argv)
+    if args.share_config:
+        sys.exit(share_config(args.config))
     if args.setup_code:
         sys.exit(show_setup_code(args.config))
     if args.setup_ssh:
@@ -143,6 +177,9 @@ def main(argv=None):
         sys.exit(run_setup(args.config))
 
     settings, problems = load_config(args.config)
+    warning = secrets_warning(args.config)
+    if warning:
+        log("CONFIG", warning, level="WARN")
     cfg = None
     if settings is not None:
         cfg, more = validate(settings)
@@ -158,8 +195,8 @@ def main(argv=None):
         sys.exit(EX_CONFIG)
     common.SHOW_DEBUG = cfg.raw_debug
     if args.check_config:
-        for k, v in sorted(vars(cfg).items()):
-            print(f"{k} = {v!r}")
+        for line in check_config_lines(cfg):
+            print(line)
         print("Config OK")
         return
 

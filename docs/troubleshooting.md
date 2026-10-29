@@ -2,6 +2,9 @@
 
 Common problems, what to check, and the known limitations.
 
+When you open an issue, paste the output of `sudo couchlink --share-config`.
+It's your config with the PC's addresses hidden.
+
 ## Common problems
 
 | Problem | What to check |
@@ -34,7 +37,8 @@ Common problems, what to check, and the known limitations.
 | The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
 | The TV turns on when you wake the PC to stream | With a TV, this means the PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. If you never use the TV with the PC, run CouchLink [without a TV](how-it-works.md#without-a-tv). |
 | The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. Without a TV, check the PC's own sleep timer. |
-| Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 600 <file> /etc/couchlink/config.toml`. The config is readable by root only, because it holds password and key hashes. |
+| Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 644 <file> /etc/couchlink/config.toml`. The password and API key hashes are in `secrets.toml`, which stays readable by root only. |
+| The log warns that `config.toml` still holds the password hash or API keys | They're from an older version and still work. Move them to `secrets.toml` with `sudo couchlink --migrate-config`. |
 
 ## Known limitations
 

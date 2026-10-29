@@ -12,7 +12,7 @@ from .auth import (KEY_NAME_RE, MIN_PASSWORD, SESSION_DAYS, check_password, cook
 from .cec import NoCec, dotted
 from .common import log
 from .config import (DEFAULTS, load_config, remove_api_key, set_api_key, set_config_value, settings_from_text,
-                     unset_config_value, update_config, validate)
+                     unset_config_value, update_config, update_secrets, validate)
 from .setup_pc import PLACEHOLDERS, check_ssh, find_mac
 
 COOKIE = "couchlink_admin"
@@ -213,7 +213,7 @@ class Admin:
                 taken.append(True)
                 return None
             return set_config_value(text, "admin_password_hash", hashed)
-        saved = self.update(change)
+        saved = self.change_secrets(change)
         if taken:
             return 409, {"ok": False, "result": "has_password", "message": "A password is already set. Log in"}, (), None
         if saved is None:
@@ -280,6 +280,16 @@ class Admin:
         except OSError:
             return None
 
+    def change_secrets(self, change):
+        """Like update, for the password hash and the API keys in secrets.toml."""
+        def apply(text):
+            settings, _ = settings_from_text(text)
+            return None if settings is None else change(text, settings)
+        try:
+            return update_secrets(self.path, apply)[1]
+        except OSError:
+            return None
+
     def save_settings(self, params, source):
         values = params.get("values")
         if not isinstance(values, dict):
@@ -336,7 +346,7 @@ class Admin:
                 exists.append(True)
                 return None
             return set_api_key(text, name, hash_api_key(key))
-        new = self.update(change)
+        new = self.change_secrets(change)
         if exists:
             return 409, {"ok": False, "result": "exists", "message": f"There is already a key named {name}"}, (), None
         if new is None:
@@ -355,7 +365,7 @@ class Admin:
                 missing.append(True)
                 return None
             return remove_api_key(text, name)
-        new = self.update(change)
+        new = self.change_secrets(change)
         if missing:
             return 404, {"ok": False, "result": "no_key", "message": f"There is no key named {name}"}, (), None
         if new is None:
@@ -381,7 +391,7 @@ class Admin:
                 moved.append(True)
                 return None
             return set_config_value(text, "admin_password_hash", hashed)
-        saved = self.update(change)
+        saved = self.change_secrets(change)
         if moved:
             return 409, {"ok": False, "result": "changed_meanwhile",
                          "message": "The password was just changed somewhere else. Log in again"}, (), None

@@ -100,7 +100,8 @@ CouchLink is a work in progress. It has been checked on the hardware in
 [Hardware and systems](docs/hardware.md), and its logic is covered by offline
 tests. CEC behavior varies a lot between brands, so expect to spend some time
 with the dry run on your own TV. Reports from other setups are welcome as
-issues.
+issues. Include the output of `sudo couchlink --share-config`, which is your
+config with the PC's addresses hidden.
 
 ## Contributing
 

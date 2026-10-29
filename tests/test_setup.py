@@ -134,7 +134,8 @@ class SetupTests(unittest.TestCase):
             text = f.read()
         self.assertNotIn(key, text)
         self.assertNotIn("sofa-console", text)
-        assert_private(self, self.path)    # only root can read the hashes
+        self.assertNotIn("pbkdf2", text)                         # the hashes are in secrets.toml
+        assert_private(self, config.secrets_path(self.path))    # only root can read them
         code, s = self.setup(["", "", "", "", "", "", "", "", "", "", "n"])  # Enter keeps them all
         self.assertEqual((s["pc_name"], s["auto_switch_on_pc_wake"]), ("Living Room PC", "if_tv_on"))
         self.assertFalse(s["status_page_buttons"])                    # Enter keeps "n" too

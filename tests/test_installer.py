@@ -13,7 +13,7 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from helpers import HERE, OLD_CONFIG, QUICK, assert_private, out
+from helpers import HERE, OLD_CONFIG, QUICK, assert_mode, assert_private, out
 import couchlink
 from couchlink import config
 
@@ -227,8 +227,19 @@ class InstallerTests(unittest.TestCase):
         code, out = self.install("--update", "--local")
         self.assertEqual(code, 0, out)
         self.assertIn("Moved api_key_hash to [api_keys] as the key named default", out)
+        self.assertIn("Moved the API key default to secrets.toml", out)
         settings, problems = config.load_config(conf)
         self.assertEqual((problems, settings["api_keys"]), ([], {"default": old}))
+        secrets = config.secrets_path(conf)
+        with open(conf) as f:
+            self.assertNotIn(old, f.read())
+        with open(secrets) as f:
+            self.assertIn(old, f.read())
+        assert_mode(self, conf, 0o644)
+        assert_private(self, secrets)
+        code, out = self.install("--update", "--local")         # a second update has nothing to move
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("secrets.toml", out.split("Checking your config")[-1].split("Installing")[0])
 
     def test_update_brings_an_old_config_up_to_date(self):
         conf = os.path.join(self.root, "etc/couchlink/config.toml")
@@ -242,8 +253,8 @@ class InstallerTests(unittest.TestCase):
         self.assertNotIn("config.example.toml\n", out.split("Updated")[-1])
         with open(conf + ".bak") as f:
             self.assertEqual(f.read(), OLD_CONFIG)
-        for path in (conf, conf + ".bak"):                       # it holds password and key hashes
-            assert_private(self, path)
+        assert_mode(self, conf, 0o644)                  # no hashes, so anyone can read it
+        assert_private(self, conf + ".bak")
         with open(conf) as f:
             self.assertIn("watch_pc_power = true", f.read())
 

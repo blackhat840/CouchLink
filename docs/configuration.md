@@ -152,7 +152,7 @@ sleep. If SSH fails, it says why and what to do.
 Every setting can go in the file itself, including the ones the settings page
 doesn't have. Anyone can read it, because it holds no secrets. The settings
 page's password and the API keys are in `secrets.toml`, next to it, which only
-root can read. Edit the config with:
+the `couchlink` user can read. Edit the config with:
 
 ```bash
 sudo nano /etc/couchlink/config.toml
@@ -222,7 +222,7 @@ The previous version of the file is saved as `config.toml.bak`.
 ### The password and API keys
 
 The settings page's password and the keys for scripts and Home Assistant are
-kept in `/etc/couchlink/secrets.toml`, which only root can read. It holds only
+kept in `/etc/couchlink/secrets.toml`, which only the `couchlink` user can read. It holds only
 hashes, never the password or the keys themselves:
 
 ```toml

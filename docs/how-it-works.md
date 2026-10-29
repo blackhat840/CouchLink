@@ -42,7 +42,9 @@ changing anything.
 
 ## The layout
 
-The Pi runs one program, `couchlink`, as a systemd service.
+The Pi runs one program, `couchlink`, as a systemd service. It runs as its own
+user, `couchlink`, not root, and can only write to its own settings and state.
+See [The couchlink user](installation.md#the-couchlink-user).
 
 ```
                        +-------------+

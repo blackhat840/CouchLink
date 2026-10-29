@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from . import VERSION
 from .auth import KEY_NAME_RE, PASSWORD_RE
-from .common import log, write_private
+from .common import log, own_like, write_private
 
 try:
     import fcntl
@@ -131,7 +131,7 @@ SECRET_SETTINGS = ("admin_password_hash", "api_keys")
 
 SECRETS_HEADER = """\
 # CouchLink's secrets: the settings page's password hash and the API key hashes.
-# Only root can read this file. Everything else is in config.toml, which holds no
+# Only the couchlink user can read it. Everything else is in config.toml, which holds no
 # secrets, so it can be shared in a bug report (sudo couchlink --share-config).
 # Change these on the settings page, or with sudo couchlink --admin-password and
 # sudo couchlink --new-api-key NAME.
@@ -224,7 +224,7 @@ def secrets_warning(config_path):
                     " are the ones used.")
     else:
         warning += " They still work."
-    return warning + " Move them to secrets.toml, which only root can read, with: sudo couchlink --migrate-config"
+    return warning + " Move them to secrets.toml, which only the couchlink user can read, with: sudo couchlink --migrate-config"
 
 
 def settings_from_text(text):
@@ -497,6 +497,7 @@ def config_lock(path):
     with SAVE_LOCK:
         fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
         try:
+            own_like(path + ".lock", os.path.dirname(os.path.abspath(path)))
             if fcntl:
                 fcntl.flock(fd, fcntl.LOCK_EX)
             yield

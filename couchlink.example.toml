@@ -10,7 +10,8 @@
 # docs/configuration.md lists every setting.
 #
 # The settings page's password and the API keys are kept apart, in secrets.toml,
-# which only root can read. This file holds no secrets, so it can be shared.
+# which only the couchlink user can read. This file holds no secrets, so it can
+# be shared.
 
 [pc]
 pc_host = "target-pc.local"          # REQUIRED: the PC's IP address (reserve it in your router)

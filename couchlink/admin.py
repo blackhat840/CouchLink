@@ -20,11 +20,11 @@ COOKIE = "couchlink_admin"
 # The settings on the page: (group, key, label, kind, options). Everything else stays a
 # matter for the config file.
 FIELDS = [
-    ("The PC", "pc_name", "Name on the status page", "text", {"blank": "Ask the PC for its name"}),
+    ("The PC", "pc_name", "Name on the status page", "text", {"blank": "Leave empty to use the PC's own name"}),
     ("The PC", "pc_host", "IP address", "text", {}),
     ("The PC", "pc_mac", "MAC address, for Wake-on-LAN", "text", {}),
     ("The PC", "ssh_user", "SSH user", "text", {}),
-    ("TV and HDMI inputs", "use_tv", "A TV is plugged into the Pi. Off: only wake the PC for remote play",
+    ("TV and HDMI inputs", "use_tv", "A TV is plugged into the Pi. Turn this off to only wake the PC for remote play",
      "bool", {}),
     ("TV and HDMI inputs", "pc_addresses", "The PC's input, such as 12:00. Separate several with commas",
      "addresses", {"blank": "Not needed without a TV"}),
@@ -50,9 +50,9 @@ KINDS = {key: kind for _, key, _, kind, _ in FIELDS}
 # What still has to be filled in, said plainly, for the setting each config problem names
 TODO = {
     "pc_host": "The PC's IP address",
-    "pc_mac": "The PC's MAC address. \"Find it from the IP address\" can fill it in",
-    "pc_addresses": "The PC's HDMI input. \"Find the HDMI inputs\" can fill it in",
-    "pi_address": "The Pi's HDMI input. \"Find the HDMI inputs\" can fill it in",
+    "pc_mac": "The PC's MAC address",
+    "pc_addresses": "The PC's HDMI input",
+    "pi_address": "The Pi's HDMI input",
 }
 
 
@@ -134,7 +134,7 @@ class Admin:
         if not settings.get("admin_password_hash"):
             if read_setup_code(self.path):
                 return 403, {"ok": False, "result": "setup",
-                             "message": "Enter the setup code the installer showed, and choose a password"}
+                             "message": "Enter the setup code the installer printed, and choose a password"}
             return 403, {"ok": False, "result": "no_password",
                          "message": "Get a setup code with: sudo couchlink --setup-code"}
         if not session_ok(cookie(headers, COOKIE), settings["admin_password_hash"]):

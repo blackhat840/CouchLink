@@ -1,6 +1,6 @@
 # How it works
 
-What CouchLink does in detail, the layout it was built on, the rule it enforces, the CEC messages it listens for, remote sessions, and running without a TV.
+What CouchLink does on the HDMI bus and the network, and why.
 
 ## Why this exists
 
@@ -10,31 +10,35 @@ you switched inputs or turned the TV off.
 
 ## What it does
 
-- **Wakes the PC** with Wake-on-LAN when the TV or soundbar is switched to the
-  PC's input. Retries if the PC does not answer.
-- **Suspends the PC** over SSH when you switch to another input or turn the TV
-  off. It waits a few seconds first, so flipping past the PC's input on the
-  way to another one does not count.
-- **Switches the TV to the PC** when the PC wakes up on its own, for example
-  from a controller or the power button. If the TV is off, CouchLink turns it
-  on, waits for it to report that it is on, then claims the PC's input a few
-  more times while the TV finishes starting.
-- **Handles Sleep from the Steam menu.** When the PC goes to sleep by itself,
-  CouchLink can switch the TV to another input, turn the TV off, or leave it
-  alone. It never wakes the PC back up.
-- **Undoes automatic input switches** that some TVs and soundbars make right
-  after a device wakes up.
-- **Keeps the PC awake for remote play.** A [remote session](#remote-sessions)
-  keeps the PC awake without the TV, for streaming to another device. It can
-  also run with [no TV at all](#without-a-tv).
-- **Takes requests** from the wake and sleep buttons on the status page, and
-  from scripts and Home Assistant through an API with a key. See
-  [Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons).
-- **A settings page** with a password, to change settings and API keys from a
-  browser. See [Settings page](status-page-and-logs.md#settings-page).
-- **Optional:** forwards TV remote buttons to the PC as a USB keyboard.
-- **Safe to try:** a dry-run mode that watches and logs without changing
-  anything, a small status page, and offline tests.
+When the TV or soundbar switches to the PC's input, CouchLink wakes the PC
+with Wake-on-LAN, and keeps trying until the PC answers. Switch to anything
+else, or turn the TV off, and it suspends the PC over SSH. It waits a few
+seconds first, so flipping past the PC's input on the way to another one
+doesn't count.
+
+It works the other way too. When the PC wakes up on its own, from a
+controller or the power button, CouchLink switches the TV to it. If the TV is
+off, it turns it on, waits until the TV says it's on, then claims the PC's
+input a few more times while the TV finishes starting. Some TVs and soundbars
+jump to another input right after a device wakes. CouchLink switches them
+back.
+
+When the PC goes to sleep by itself, for example from the Steam menu,
+CouchLink can switch the TV to another input, turn it off, or leave it alone.
+It never wakes the PC back up.
+
+For remote play, a [remote session](#remote-sessions) keeps the PC awake
+without the TV. CouchLink can also run with [no TV at all](#without-a-tv).
+
+You can wake the PC and put it to sleep with the buttons on the status page,
+or from scripts and Home Assistant with an API key. See
+[Status page and logs](status-page-and-logs.md#wake-and-sleep-buttons). The
+[settings page](status-page-and-logs.md#settings-page) changes the settings
+and the API keys. If you want, the Pi can also pass TV remote buttons to the
+PC as a USB keyboard.
+
+To try it without risk, a dry run watches and logs everything without
+changing anything.
 
 ## The layout
 

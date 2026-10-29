@@ -29,7 +29,7 @@ Common problems, what to check, and the known limitations.
 | You forgot the settings page's password | Set a new one with `sudo couchlink --admin-password`. |
 | The settings page asks for a setup code you don't have | See it with `sudo couchlink --setup-code`, or set the password with `sudo couchlink --admin-password`. |
 | The status page always goes to the settings page | The settings aren't complete yet. The settings page lists what's missing under "Almost there". |
-| Find it from the IP address doesn't find the MAC address | The PC has to be on and on the same network as the Pi. Check the IP address. |
+| Look it up doesn't find the PC's MAC address | The PC has to be on and on the same network as the Pi. Check the IP address. |
 | After saving settings, the page waits | CouchLink restarts to use them, which takes a few seconds, longer on a Pi Zero. If it doesn't come back, check `sudo journalctl -u couchlink.service -n 50`. A wrong value isn't saved, so a restart doesn't fail because of one. |
 | The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
 | The TV turns on when you wake the PC to stream | With a TV, this means the PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. If you never use the TV with the PC, run CouchLink [without a TV](how-it-works.md#without-a-tv). |

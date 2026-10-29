@@ -185,7 +185,7 @@ class BrowserSetupTests(unittest.TestCase):
         self.assertTrue(auth.check_password(PASSWORD, config.load_config(self.path)[0]["admin_password_hash"]))
         status, body = self.request("/admin/api/state")                    # and logged in
         self.assertEqual(status, 200)
-        self.assertIn("The PC's HDMI input. \"Find the HDMI inputs\" can fill it in", body["todo"])
+        self.assertIn("The PC's HDMI input", body["todo"])
         self.assertTrue(body["cec"])
         status, body = self.request("/admin/setup", {"code": self.code, "password": "another one"})
         self.assertEqual(status, 409)                                      # only once

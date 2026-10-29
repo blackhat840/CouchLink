@@ -1,8 +1,8 @@
 # Configuration
 
-Finding your CEC addresses, changing settings, and every setting. The settings
-page is the easy way to do both. The terminal and the config file are there as
-advanced options.
+How to find your CEC addresses and change settings, and a list of every
+setting. The settings page does both. The terminal and the config file are
+there if you want them.
 
 ## Finding your CEC addresses
 
@@ -18,21 +18,21 @@ CouchLink finds them for you. Turn the TV on, and plug in and turn on the PC.
 Open the [settings page](status-page-and-logs.md#settings-page) and use **Find
 the HDMI inputs**:
 
-1. Choose how the PC is connected: to the TV, to the TV with a soundbar or AV
-   receiver on the ARC port, or to a soundbar or AV receiver.
-2. Press **Scan the HDMI devices**. Every device that speaks CEC is listed, and
-   the Pi's input and the soundbar's are filled in.
-3. Press **Listen while I switch to the PC**, then switch the TV to the PC with
-   the remote. The PC usually doesn't speak CEC, so this is how its input is
-   found. If it hears nothing within a minute, your TV may not announce the
-   switch. Type the PC's input into the field instead.
+1. Choose how the PC is plugged in: into the TV, into the TV with a soundbar or
+   AV receiver on the ARC port, or into a soundbar or AV receiver.
+2. Press **Scan for devices**. Every device that speaks CEC is listed, and the
+   Pi's input and the soundbar's are filled in.
+3. Press **Listen for the PC**, then switch the TV to the PC with the remote.
+   The PC usually doesn't speak CEC, so this is how its input is found. If
+   nothing is heard within a minute, your TV may not announce the switch. Type
+   the PC's input into the field instead.
 4. Check the inputs in the form, then press **Save and restart**.
 
 ![Find the HDMI inputs after a scan and a switch to the PC. The PC is on TV input 2, the Pi on input 4 and the soundbar on input 1.](setup-hdmi-inputs.png)
 
 The lit tiles are the inputs CouchLink will use: the PC in green, the Pi in
-cyan and the soundbar in violet. The others are the rest of the devices on
-the bus.
+cyan and the soundbar in violet. The others are the other devices on the
+bus, which CouchLink doesn't need.
 
 CouchLink keeps running while it does this. It uses the same connection to
 the TV.

@@ -113,7 +113,7 @@ change are logged as `[ADMIN]`. Only this page can make changes, so another
 web site can't use your login.
 
 The password is stored as a salted hash, in `/etc/couchlink/secrets.toml`,
-along with the API keys' hashes. Only root can read that file. `config.toml`
+along with the API keys' hashes. Only the `couchlink` user can read that file. `config.toml`
 holds no secrets.
 
 ## API

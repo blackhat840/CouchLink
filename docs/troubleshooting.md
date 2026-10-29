@@ -18,7 +18,12 @@ It's your config with the PC's addresses hidden.
 | The PC never wakes | Test with `wakeonlan <mac>` from the Pi. Check the BIOS and OS wake settings. Try a subnet `wol_broadcast`. |
 | `SSH ended with 255`, then `Confirmed: the PC went to sleep` | Normal. The connection drops as the PC suspends. |
 | Suspend fails with a password prompt | The sudoers rule is missing or is being overridden. Check the file name starts with `zzz-`. |
-| `Host key verification failed` | The SSH key was set up as your user, not root. Redo [step 5 of Preparing the PC](preparing-the-pc.md#5-give-the-pi-a-key-the-pc-trusts) with `sudo`. |
+| `Host key verification failed` | The PC isn't in CouchLink's own `known_hosts`, in `/var/lib/couchlink/.ssh`. Run `sudo bash install.sh --setup-ssh`, or redo [step 5 of Preparing the PC](preparing-the-pc.md#5-give-the-pi-a-key-the-pc-trusts). |
+| SSH worked before an update, and not after | The key moved from `/root/.ssh` to `/var/lib/couchlink/.ssh`. Check it's there and belongs to `couchlink` with `sudo ls -la /var/lib/couchlink/.ssh`. If it's missing, run `sudo bash install.sh --setup-ssh`. |
+| `Permission denied` on `/dev/cec0`, or the TV is never heard | The `couchlink` user needs the `video` group. `id couchlink` should list `video`, and `ls -l /dev/cec0` should show the group `video`. To add it: `sudo usermod -aG video couchlink`, then `sudo systemctl restart couchlink`. |
+| The remote's buttons stopped reaching the PC | `ls -l /dev/hidg0` should show the group `couchlink`. If not, run `sudo bash install.sh --update` to install the udev rule, or `sudo chgrp couchlink /dev/hidg0 && sudo chmod 660 /dev/hidg0` until the next reboot. |
+| `Permission denied` saving settings, or `Can't write` in the log | Something in `/etc/couchlink` belongs to root. `ls -la /etc/couchlink` should show `couchlink` as the owner of every file but `config.example.toml`. Fix it with `sudo chown couchlink:couchlink /etc/couchlink /etc/couchlink/*`. |
+| You want to run CouchLink as root again | See [Going back to running as root](installation.md#going-back-to-running-as-root). |
 | `No route to host` on SSH | The PC is asleep or off, or on Bazzite the firewall blocks SSH. Wake the PC and try again. On Bazzite, run `sudo firewall-cmd --permanent --add-service=ssh && sudo firewall-cmd --reload` on the PC. |
 | `Connection refused` or timeouts on SSH | sshd is not running, or the firewall blocks it. On Bazzite, allow the `ssh` service in firewalld. |
 | SSH asks for a password even after `ssh-copy-id` | On Bazzite, run `restorecon -Rv ~/.ssh` on the PC. Also check `ssh_user` matches your account. |
@@ -37,7 +42,7 @@ It's your config with the PC's addresses hidden.
 | The API answers `locked_out` | 5 wrong keys came from that address within a minute. Wait a minute. |
 | The TV turns on when you wake the PC to stream | With a TV, this means the PC was woken by something else, such as Moonlight or a phone app, so CouchLink treats it like a controller wake. Use Wake PC on the status page or `POST /api/wake` with `{"tv": false}` instead. If you never use the TV with the PC, run CouchLink [without a TV](how-it-works.md#without-a-tv). |
 | The PC goes back to sleep while you stream to another device | Start the stream with Wake PC, which starts a [remote session](how-it-works.md#remote-sessions). Without one, CouchLink suspends the PC when the TV is not on its input. Without a TV, check the PC's own sleep timer. |
-| Uploads to `/etc/couchlink` fail | That folder belongs to root. Copy the file to your home folder and use `sudo install -m 644 <file> /etc/couchlink/config.toml`. The password and API key hashes are in `secrets.toml`, which stays readable by root only. |
+| Uploads to `/etc/couchlink` fail | That folder belongs to the `couchlink` user. Copy the file to your home folder and use `sudo install -m 644 -o couchlink -g couchlink <file> /etc/couchlink/config.toml`. The password and API key hashes are in `secrets.toml`, which only the `couchlink` user can read. |
 | The log warns that `config.toml` still holds the password hash or API keys | They're from an older version and still work. Move them to `secrets.toml` with `sudo couchlink --migrate-config`. |
 
 ## Known limitations

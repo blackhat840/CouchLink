@@ -264,10 +264,54 @@ diff /etc/couchlink/config.toml /etc/couchlink/config.example.toml
 | `/usr/local/lib/couchlink/` | The program |
 | `/usr/local/bin/couchlink` | The `couchlink` command, which runs the program |
 | `/etc/couchlink/config.toml` | Your settings. It holds no secrets, so anyone can read it. |
-| `/etc/couchlink/secrets.toml` | The settings page's password hash and the API key hashes, readable by root only |
+| `/etc/couchlink/secrets.toml` | The settings page's password hash and the API key hashes, readable by the `couchlink` user only |
 | `/etc/couchlink/config.toml.lock` | Stops two saves from running at once. It's empty, and safe to leave. |
 | `/etc/systemd/system/couchlink.service` | The service |
+| `/var/lib/couchlink/` | The `couchlink` user's own folder, with the SSH key the PC trusts in `.ssh` |
 | `/usr/local/bin/couchlink-hid-gadget.sh` and `couchlink-hid.service` | The USB keyboard, with `--with-hid` only |
+| `/etc/udev/rules.d/70-couchlink-hidg.rules` | Lets the `couchlink` user type on the USB keyboard, with `--with-hid` only |
+
+## The couchlink user
+
+CouchLink runs as its own system user, `couchlink`, not as root, so a bug in
+its web pages can't reach the rest of the Pi. The user can't log in. It's in
+the `video` group, which owns the HDMI-CEC device, `/dev/cec0`. The service
+can only write to `/etc/couchlink` and `/var/lib/couchlink`, and has one
+special permission, to ping the PC.
+
+`sudo couchlink --setup`, `--setup-cec`, `--new-api-key` and `--admin-password`
+still run as root from the terminal. The files they save stay the `couchlink`
+user's.
+
+Updating an install from before this change does the move in one step. It
+creates the user, gives it `/etc/couchlink`, copies root's SSH key to
+`/var/lib/couchlink/.ssh`, and installs the new service. It prints each of
+these as it goes.
+
+### Going back to running as root
+
+If something stops working after the update, you can run CouchLink as root
+again while the problem is sorted out:
+
+```bash
+sudo mkdir -p /etc/systemd/system/couchlink.service.d
+printf '[Service]\nUser=root\nGroup=root\nCapabilityBoundingSet=~\nAmbientCapabilities=\nNoNewPrivileges=no\n' \
+    | sudo tee /etc/systemd/system/couchlink.service.d/run-as-root.conf
+sudo systemctl daemon-reload
+sudo systemctl restart couchlink
+```
+
+Updates don't touch that file. To go back to the `couchlink` user, delete it
+and restart:
+
+```bash
+sudo rm /etc/systemd/system/couchlink.service.d/run-as-root.conf
+sudo systemctl daemon-reload
+sudo systemctl restart couchlink
+```
+
+Please open an issue saying what broke, with the output of
+`sudo journalctl -u couchlink -n 50`.
 
 ---
 

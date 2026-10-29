@@ -116,23 +116,30 @@ wake the PC. Bazzite ships these rules for the controllers it knows about.
 
 ## 5. Give the Pi a key the PC trusts
 
-The service on the Pi runs as root, so the key must belong to root on the Pi.
-`sudo bash install.sh --setup-ssh` on the Pi does this for you. It asks for
+The service on the Pi runs as its own user, `couchlink`, and its key is in
+`/var/lib/couchlink/.ssh/id_ed25519`, next to its own `known_hosts`.
+`sudo bash install.sh --setup-ssh` on the Pi sets this up for you. It asks for
 the PC's password once. **Check SSH to the PC** on the settings page then says
 whether it works. To do it by hand, run these **on the Pi**:
 
 ```bash
-sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519
-sudo ssh-copy-id deck@192.168.1.50
-sudo ssh deck@192.168.1.50 "echo ok"
+K=/var/lib/couchlink/.ssh
+sudo ssh-keygen -t ed25519 -N "" -C couchlink -f $K/id_ed25519
+sudo ssh-copy-id -i $K/id_ed25519.pub -o UserKnownHostsFile=$K/known_hosts deck@192.168.1.50
+sudo chown -R couchlink:couchlink $K
+sudo -u couchlink ssh -i $K/id_ed25519 -o UserKnownHostsFile=$K/known_hosts deck@192.168.1.50 "echo ok"
 ```
 
 The last command should print `ok` without asking for a password. Then test
 the exact command CouchLink will use. This puts the PC to sleep:
 
 ```bash
-sudo ssh deck@192.168.1.50 "sudo -n systemctl suspend"
+sudo -u couchlink ssh -i $K/id_ed25519 -o UserKnownHostsFile=$K/known_hosts deck@192.168.1.50 "sudo -n systemctl suspend"
 ```
+
+Before CouchLink had its own user, the key was root's, in `/root/.ssh`.
+Updating copies it, and the PC's entry in root's `known_hosts`, so the PC
+keeps trusting the Pi. Root's own key is left where it is.
 
 On Bazzite and other SELinux systems, if the key is copied but SSH still asks
 for a password, fix the labels on the PC's `.ssh` folder:

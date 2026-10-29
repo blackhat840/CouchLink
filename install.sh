@@ -376,9 +376,9 @@ chmod 0755 "$BIN.new"
 mv "$BIN.new" "$BIN"
 echo "Installed $LIB (${NEW_VER:-unknown version}) and the couchlink command"
 
-# secrets.toml holds the settings page's password hash and the API key hashes, so only root
-# can read it. config.toml holds no secrets, so anyone can read it, unless it still has hashes
-# from before they moved. The .bak may be from before, so it stays root only.
+# secrets.toml holds the settings page's password hash and the API key hashes, so only its
+# owner can read it. config.toml holds no secrets, so anyone can read it, unless it still has hashes
+# from before they moved. The .bak may be from before, so only its owner can read it.
 if [ -n "$MIGRATED" ] && [ -f "$MIG_DIR/secrets.toml" ] && ! cmp -s "$MIG_DIR/secrets.toml" "$SECRETS"; then
     install -m 0600 "$MIG_DIR/secrets.toml" "$SECRETS"
 fi
@@ -403,7 +403,7 @@ if [ ! -f "$SECRETS" ]; then
         > "$SECRETS.new"
     chmod 0600 "$SECRETS.new"
     mv "$SECRETS.new" "$SECRETS"
-    echo "Created $SECRETS for the settings page's password and the API keys, readable by root only"
+    echo "Created $SECRETS for the settings page's password and the API keys, readable by its owner only"
 fi
 chmod 0600 "$SECRETS"
 [ -z "$MIGRATED" ] || rm -rf "$MIG_DIR"

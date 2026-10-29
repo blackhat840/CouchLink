@@ -22,7 +22,7 @@ CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"     # no 0/O or 1/I to mix up
 
 def setup_code_path(config_path):
     """The one-time code that lets the first visitor set the settings page's password. It
-    sits next to the config, readable by root only."""
+    sits next to the config, readable by its owner only."""
     return os.path.join(os.path.dirname(os.path.abspath(config_path)), "setup-code")
 
 

@@ -55,7 +55,7 @@ def log(component, message, level="INFO"):
 
 
 def write_private(path, text, mode=0o600):
-    """Replace path with text, readable by root only unless mode says otherwise. The text
+    """Replace path with text, readable by its owner only unless mode says otherwise. The text
     goes to a new file next to it, which then takes its place in one step. A power cut
     leaves the old file or the new one, never an empty or half-written one."""
     folder = os.path.dirname(os.path.abspath(path))

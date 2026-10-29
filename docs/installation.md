@@ -72,14 +72,15 @@ Wired Ethernet is the most reliable way to wake the PC. See
 
    ![The Almost there list: the PC's IP and MAC address, and the PC's and the Pi's HDMI inputs](setup-almost-there.png)
 
-   - Fill in the PC's IP address, and press **Find it from the IP address** for
-     its MAC address. The PC has to be on.
+   - Fill in the PC's IP address, and press **Look it up** under the MAC address
+     to fill it in. The PC has to be on.
 
-     ![The PC's settings, with the MAC address found from the IP address](setup-the-pc.png)
+     ![The PC's settings, with the MAC address looked up from the IP address](setup-the-pc.png)
 
    - With a TV, use **Find the HDMI inputs**. Turn the TV on, choose how the PC
-     is connected, press **Scan**, then **Listen** and switch the TV to the PC.
-     See [Finding your CEC addresses](configuration.md#finding-your-cec-addresses).
+     is plugged in, press **Scan for devices**, then press **Listen for the PC**
+     and switch the TV to the PC. See
+     [Finding your CEC addresses](configuration.md#finding-your-cec-addresses).
      Without a TV, turn off "A TV is plugged into the Pi" instead.
 
      ![Find the HDMI inputs after a scan and a switch to the PC, with the PC, the Pi and the soundbar found](setup-hdmi-inputs.png)

@@ -136,7 +136,7 @@
   // ---- the MAC address, read from the Pi's network table
   function findMacRow() {
     var row = el("div", { "class": "row" });
-    var b = el("button", { "class": "btn", type: "button" }, "Find it from the IP address");
+    var b = el("button", { "class": "btn", type: "button" }, "Look it up");
     var note = el("span", { "class": "note", role: "status" });
     b.addEventListener("click", function () {
       note.textContent = "Looking";
@@ -171,7 +171,7 @@
     $("scan").disabled = true;
     $("listen").disabled = true;
     busy(true);
-    note.textContent = "Asking every HDMI device who it is. This can take up to a minute";
+    note.textContent = "Scanning. This can take up to a minute";
     post("/admin/cec/scan").then(function (j) {
       $("scan").disabled = false;
       busy(false);
@@ -182,17 +182,17 @@
       found = { known: j.devices.map(function (d) { return d.address; }), pi: pi, bar: bar };
       list.textContent = "";
       j.devices.forEach(function (d) {
-        var label = d === pi ? "This Pi" : d === bar ? "Soundbar or receiver" : d.name;
+        var label = d === pi ? "This Pi" : d === bar ? "Soundbar" : (d.osd || d.name);
         var color = d === pi ? "var(--cyan)" : d === bar ? "var(--violet)" : "";
-        list.appendChild(tile(label, d.dotted, d === pi || d === bar ? d.name : (d.osd || d.vendor), color));
+        list.appendChild(tile(label, d.dotted, color ? "Filled in below" : "Not used", color));
       });
       list.hidden = false;
       $("f_use_tv").checked = true;
       if (pi) setField("pi_address", pi.address);
       setField("soundbar_address", bar ? bar.address : "");
       note.textContent = (pi ? "Found the Pi" : "The Pi didn't answer, so type its input below") +
-        (layout === "tv" ? "" : bar ? " and the soundbar" : ". No soundbar answered, so type its input below") +
-        ". Now press 2, then switch the TV to the PC";
+        (layout === "tv" ? "" : bar ? " and the soundbar" : ". The soundbar didn't answer, so type its input below") +
+        ". Now press Listen for the PC, then switch the TV to the PC";
       $("listen").disabled = false;
     }).catch(function () { $("scan").disabled = false; busy(false); note.textContent = "Could not reach CouchLink"; });
   });
@@ -203,7 +203,7 @@
     listening = true;
     $("listen").disabled = true;
     busy(true);
-    note.textContent = "Listening. Switch the TV to the PC now. If the PC is already on screen, switch away and back";
+    note.textContent = "Listening for a minute. Switch the TV to the PC now. If it is already on the PC, switch away and back";
     post("/admin/cec/heard").then(function (start) {
       function poll() {
         post("/admin/cec/heard", { since: start.since }).then(function (j) {
@@ -212,20 +212,19 @@
             listening = false;
             $("listen").disabled = false;
             busy(false);
-            var t = tile("The PC", pc.dotted, "Heard when you switched", "var(--green)");
+            var t = tile("The PC", pc.dotted, "Filled in below", "var(--green)");
             t.id = "pcTile";
             if ($("pcTile")) $("pcTile").remove();
             $("devices").insertBefore(t, $("devices").firstChild);
             setField("pc_addresses", pc.address);
-            note.textContent = "Heard a switch to " + pc.dotted + ". It's filled in as the PC's input. " +
-              "Check the inputs below, then save";
+            note.textContent = "The PC is on " + pc.dotted + ". Check the inputs below, then save";
             return;
           }
           if (Date.now() > end) {
             listening = false;
             $("listen").disabled = false;
             busy(false);
-            note.textContent = "Didn't hear a switch. Your TV may not announce it. Type the PC's input below, " +
+            note.textContent = "Didn't hear the TV switch. Some TVs don't announce it. Type the PC's input below, " +
               "such as 12:00 for input 2 of a soundbar on TV input 1";
             return;
           }

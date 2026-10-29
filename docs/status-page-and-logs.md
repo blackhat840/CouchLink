@@ -76,8 +76,8 @@ status page, changes CouchLink from a browser:
 - **Finding the HDMI inputs:** scans the bus and listens while you switch the
   TV to the PC, then fills in the inputs. See
   [Finding your CEC addresses](configuration.md#on-the-settings-page).
-- **The PC's MAC address:** **Find it from the IP address** reads it from the
-  Pi's network table. The PC has to be on.
+- **The PC's MAC address:** **Look it up** reads it from the Pi's network
+  table. The PC has to be on.
 - **Check SSH to the PC:** says whether the Pi can log in to the PC to put it to
   sleep, and what to do if it can't.
 - **Password:** change the page's password. Other devices that are logged in

@@ -86,7 +86,11 @@ status page, changes CouchLink from a browser:
 ### The first visit
 
 On a new install, the page asks for a one-time setup code and a new password.
-The installer prints the code. To see it again:
+The installer prints the code.
+
+![The settings page's first visit, asking for the setup code and a new password](setup-first-visit.png)
+
+To see the code again:
 
 ```bash
 sudo couchlink --setup-code

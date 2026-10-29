@@ -294,6 +294,7 @@ body.admin { --accent: var(--cyan); --accent-soft: rgba(34, 211, 238, 0.35); }
 .form-panel h1.state { margin: 6px 0 10px; font-size: clamp(28px, 5vw, 40px); letter-spacing: 0.06em; }
 .hero.attention { --accent: var(--amber); --accent-soft: rgba(251, 191, 36, 0.35); }
 .todo ul { margin: 0; padding-left: 20px; line-height: 1.6; }
+.form-panel select { width: auto; max-width: 100%; align-self: flex-start; }   /* as wide as its longest choice */
 .form-panel .grid { margin: 14px 0 0; }
 .form-panel .grid[hidden] { display: none; }
 @media (max-width: 560px) {

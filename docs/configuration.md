@@ -28,6 +28,12 @@ the HDMI inputs**:
    switch. Type the PC's input into the field instead.
 4. Check the inputs in the form, then press **Save and restart**.
 
+![Find the HDMI inputs after a scan and a switch to the PC. The PC is on TV input 2, the Pi on input 4 and the soundbar on input 1.](setup-hdmi-inputs.png)
+
+The lit tiles are the inputs CouchLink will use: the PC in green, the Pi in
+cyan and the soundbar in violet. The others are the rest of the devices on
+the bus.
+
 CouchLink keeps running while it does this. It uses the same connection to
 the TV.
 

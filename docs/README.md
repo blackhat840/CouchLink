@@ -23,7 +23,7 @@
 | `test_couchlink.py` | Runs the tests: `python3 test_couchlink.py`. `install.sh --test` runs them with `--quick`, which skips the tests of the installer itself. |
 | `README.md` | Overview and quick start |
 | `CONTRIBUTING.md` | Rules for changes to this repository |
-| `docs/` | These guides and the status page screenshot |
+| `docs/` | These guides, and screenshots of the status page and the settings page |
 
 ### The program
 

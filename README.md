@@ -70,6 +70,8 @@ Then:
    [Preparing the PC](docs/preparing-the-pc.md).
 4. Give the Pi an SSH key the PC trusts: `sudo bash install.sh --setup-ssh`.
 
+![Find the HDMI inputs on the settings page, with the PC, the Pi and the soundbar found](docs/setup-hdmi-inputs.png)
+
 Rather set up in the terminal, or edit the config file yourself? See
 [Advanced setup](docs/installation.md#advanced-setup).
 

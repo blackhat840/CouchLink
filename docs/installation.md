@@ -64,13 +64,26 @@ Wired Ethernet is the most reliable way to wake the PC. See
    clone instead.
 
 5. **Finish the setup in the browser.** Open the settings page on your phone or
-   computer, enter the setup code and choose a password. Then:
+   computer, enter the setup code and choose a password.
+
+   ![The settings page's first visit, asking for the setup code and a new password](setup-first-visit.png)
+
+   An **Almost there** list then says what CouchLink still needs:
+
+   ![The Almost there list: the PC's IP and MAC address, and the PC's and the Pi's HDMI inputs](setup-almost-there.png)
+
    - Fill in the PC's IP address, and press **Find it from the IP address** for
      its MAC address. The PC has to be on.
+
+     ![The PC's settings, with the MAC address found from the IP address](setup-the-pc.png)
+
    - With a TV, use **Find the HDMI inputs**. Turn the TV on, choose how the PC
      is connected, press **Scan**, then **Listen** and switch the TV to the PC.
      See [Finding your CEC addresses](configuration.md#finding-your-cec-addresses).
      Without a TV, turn off "A TV is plugged into the Pi" instead.
+
+     ![Find the HDMI inputs after a scan and a switch to the PC, with the PC, the Pi and the soundbar found](setup-hdmi-inputs.png)
+
    - Press **Save and restart**. CouchLink starts working.
 
    Until this is done, CouchLink runs only the settings page. Lost the code?

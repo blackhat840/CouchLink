@@ -31,10 +31,10 @@ def log(component, message, level="INFO"):
     print(line, flush=True)
 
 
-def write_private(path, text):
-    """Replace path with text, readable by root only. The text goes to a new file next to
-    it, which then takes its place in one step. A power cut leaves the old file or the new
-    one, never an empty or half-written one."""
+def write_private(path, text, mode=0o600):
+    """Replace path with text, readable by root only unless mode says otherwise. The text
+    goes to a new file next to it, which then takes its place in one step. A power cut
+    leaves the old file or the new one, never an empty or half-written one."""
     folder = os.path.dirname(os.path.abspath(path))
     fd, temp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".", suffix=".tmp", dir=folder)
     try:
@@ -42,6 +42,8 @@ def write_private(path, text):
             f.write(text)
             f.flush()
             os.fsync(f.fileno())
+        if mode != 0o600:
+            os.chmod(temp, mode)
         os.replace(temp, path)
     except BaseException:
         try:

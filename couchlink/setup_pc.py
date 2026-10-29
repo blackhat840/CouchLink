@@ -13,7 +13,8 @@ from .actions import send_magic_packet
 from .auth import KEY_NAME_RE, MIN_PASSWORD, hash_api_key, hash_password, remove_setup_code
 from .auth import new_api_key as generate_key
 from .common import DOCS_URL
-from .config import DEFAULTS, load_config, save_answers, set_api_key, set_config_value, update_config, validate
+from .config import (DEFAULTS, load_config, save_answers, secrets_path, set_api_key, set_config_value,
+                     update_secrets, validate)
 from .setup_cec import couchlink_service
 
 
@@ -26,7 +27,7 @@ MAC_RE = re.compile(r"([0-9a-f]{2}[:-]){5}[0-9a-f]{2}", re.IGNORECASE)
 def show_api_key(key, name, path, out):
     out(f"New API key {name}: {key}")
     out("")
-    out(f"Copy it now. Only a hash of it is saved in {path}, so it can't be shown again.")
+    out(f"Copy it now. Only a hash of it is saved, in {secrets_path(path)}, so it can't be shown again.")
     out(f"Generating another key named {name} replaces it. Keys with other names keep working.")
     out("Scripts send it as:")
     out("  Authorization: Bearer <key>")
@@ -42,7 +43,7 @@ def new_api_key(path, name="default", out=print):
         return 1
     key = generate_key()
     try:
-        update_config(path, lambda text: set_api_key(text, name, hash_api_key(key)))
+        update_secrets(path, lambda text: set_api_key(text, name, hash_api_key(key)))
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --new-api-key {name}")
         return 1
@@ -77,7 +78,7 @@ def set_admin_password(path, out=print, secret=getpass.getpass):
         return 1
     hashed = hash_password(password)
     try:
-        update_config(path, lambda text: set_config_value(text, "admin_password_hash", hashed))
+        update_secrets(path, lambda text: set_config_value(text, "admin_password_hash", hashed))
     except PermissionError:
         out("Run it with sudo: sudo couchlink --admin-password")
         return 1
@@ -333,16 +334,22 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
     answers = [(key, value) for key, value in (
         ("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")), ("ssh_user", user),
         ("pc_name", name or None), ("auto_switch_on_pc_wake", wake_mode), ("on_pc_sleep", sleep_mode),
-        ("use_tv", use_tv), ("status_page_buttons", buttons),
-        ("admin_password_hash", hash_password(password) if password else None)) if value is not None]
+        ("use_tv", use_tv), ("status_page_buttons", buttons)) if value is not None]
+    password_hash = hash_password(password) if password else None
 
     def answer(config):
         for key, value in answers:
             config = set_config_value(config, key, value)
-        return set_api_key(config, key_name, hash_api_key(api_key)) if api_key else config
-    answered = {key for key, _ in answers} | ({"api_keys"} if api_key else set())
+        return config
+
+    def secret_answers(secrets):
+        if password_hash:
+            secrets = set_config_value(secrets, "admin_password_hash", password_hash)
+        return set_api_key(secrets, key_name, hash_api_key(api_key)) if api_key else secrets
     try:
-        saved, kept, problem = save_answers(path, text, answer, answered)
+        saved, kept, problem = save_answers(path, text, answer, {key for key, _ in answers})
+        if not problem and (password_hash or api_key):
+            update_secrets(path, secret_answers)
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup")
         return 1

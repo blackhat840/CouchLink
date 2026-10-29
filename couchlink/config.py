@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from . import VERSION
 from .auth import KEY_NAME_RE, PASSWORD_RE
-from .common import write_private
+from .common import log, write_private
 
 try:
     import fcntl
@@ -118,7 +118,113 @@ def load_config(path):
         return None, [f"Config file {path} not found (copy couchlink.example.toml there)"]
     except tomllib.TOMLDecodeError as e:
         return None, [f"Config file {path} is not valid TOML: {e}"]
-    return settings_from_raw(raw)
+    settings, problems = settings_from_raw(raw)
+    secrets, more = load_secrets(path)
+    for key in SECRET_SETTINGS:
+        if secrets.get(key):            # secrets.toml wins, but an empty one doesn't hide config.toml's
+            settings[key] = secrets[key]
+    return settings, problems + more
+
+
+SECRET_SETTINGS = ("admin_password_hash", "api_keys")
+
+
+SECRETS_HEADER = """\
+# CouchLink's secrets: the settings page's password hash and the API key hashes.
+# Only root can read this file. Everything else is in config.toml, which holds no
+# secrets, so it can be shared in a bug report (sudo couchlink --share-config).
+# Change these on the settings page, or with sudo couchlink --admin-password and
+# sudo couchlink --new-api-key NAME.
+"""
+
+
+HASH_RE = re.compile(r"sha256:[0-9a-f]{64}|pbkdf2_sha256\$[^\"'\s]*")
+
+
+def secrets_path(config_path):
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), "secrets.toml")
+
+
+def read_secrets_text(config_path):
+    """secrets.toml's text, or None if there isn't one yet."""
+    try:
+        with open(secrets_path(config_path)) as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+
+def load_secrets(config_path):
+    """(the settings in secrets.toml, problems). No file is the same as an empty one."""
+    path = secrets_path(config_path)
+    try:
+        text = read_secrets_text(config_path)
+    except PermissionError:
+        return {}, [f"Can't read {path}. Run it with sudo"]
+    if not text:
+        return {}, []
+    try:
+        flat = flatten(tomllib.loads(text))
+    except tomllib.TOMLDecodeError as e:
+        return {}, [f"{path} is not valid TOML: {e}"]
+    problems = [f"Unknown setting '{k}' in {path} (it only holds {' and '.join(SECRET_SETTINGS)})"
+                for k in sorted(set(flat) - set(SECRET_SETTINGS))]
+    secrets = {k: flat[k] for k in SECRET_SETTINGS if k in flat}
+    if isinstance(secrets.get("api_keys"), dict):
+        secrets["api_keys"] = dict(secrets["api_keys"])
+    return secrets, problems
+
+
+def secrets_in_text(text):
+    """The secret settings that config text still holds, such as ["admin_password_hash"]."""
+    try:
+        flat = flatten(tomllib.loads(text))
+    except tomllib.TOMLDecodeError:
+        return []
+    left = [k for k in SECRET_SETTINGS if flat.get(k)]
+    if flat.get("api_key_hash") and "api_keys" not in left:
+        left.append("api_keys")
+    return left
+
+
+def has_secrets(text):
+    """Whether config text holds a hash anywhere, even in a comment, so it must stay private."""
+    return bool(HASH_RE.search(text) or secrets_in_text(text))
+
+
+SHARE_HIDDEN = ("pc_host", "pc_mac", "wol_broadcast")
+
+
+def hide_for_sharing(text):
+    """Config text for a bug report: the PC's addresses replaced, and any hash left over
+    from before secrets.toml taken out too."""
+    for key in SHARE_HIDDEN:
+        text = re.sub(rf'^([ \t]*{key}[ \t]*=[ \t]*)("[^"]*"|[^#\n]*?)([ \t]*#.*)?$',
+                      lambda m: f'{m.group(1)}"<hidden>"{m.group(3) or ""}', text, flags=re.M)
+    return HASH_RE.sub("<hidden>", text)
+
+
+SECRET_NAMES = {"admin_password_hash": "the settings page's password hash", "api_keys": "the API keys"}
+
+
+def secrets_warning(config_path):
+    """One warning if config.toml still holds the password hash or API keys, or None."""
+    try:
+        with open(config_path) as f:
+            left = secrets_in_text(f.read())
+    except OSError:
+        return None
+    if not left:
+        return None
+    secrets, _ = load_secrets(config_path)
+    both = [k for k in left if secrets.get(k)]
+    warning = f"config.toml still holds {' and '.join(SECRET_NAMES[k] for k in left)}."
+    if both:
+        warning += (f" secrets.toml has {' and '.join(SECRET_NAMES[k] for k in both)} too, and those"
+                    " are the ones used.")
+    else:
+        warning += " They still work."
+    return warning + " Move them to secrets.toml, which only root can read, with: sudo couchlink --migrate-config"
 
 
 def settings_from_text(text):
@@ -303,10 +409,83 @@ def set_config_value(text, key, value):
 
 
 def save_config(path, old, new):
-    """Write new to path, keeping old as path.bak. Both readable by root only, since the
-    config holds password and key hashes. If the .bak can't be written, path is left alone."""
+    """Write new to path, keeping old as path.bak. If the .bak can't be written, path is left
+    alone. The config is readable by everyone once it holds no hashes. The .bak stays root
+    only, since it may be from before the hashes moved to secrets.toml."""
     write_private(path + ".bak", old)
-    write_private(path, new)
+    write_private(path, new, 0o600 if has_secrets(new) else 0o644)
+
+
+def move_secrets_text(config_text, secrets_text):
+    """Move the password hash and API keys from config text to secrets text. Returns (new
+    config text, new secrets text, changes). In config.toml each moved line is commented out
+    without its hash, and hashes left in old comments are taken out, so the file can be shared.
+    Where both have a value, secrets.toml's stays."""
+    try:
+        flat = flatten(tomllib.loads(config_text))
+        secrets = flatten(tomllib.loads(secrets_text or ""))
+    except tomllib.TOMLDecodeError:
+        return config_text, secrets_text, []
+    secrets_text = secrets_text or SECRETS_HEADER
+    changes = []
+    password = flat.get("admin_password_hash")
+    if password:
+        if secrets.get("admin_password_hash"):
+            changes.append("Commented out admin_password_hash in config.toml. secrets.toml already has one, "
+                           "which is the one used")
+        else:
+            secrets_text = set_config_value(secrets_text, "admin_password_hash", password)
+            changes.append("Moved admin_password_hash to secrets.toml")
+        config_text = re.sub(r"^([ \t]*)admin_password_hash[ \t]*=.*$",
+                             r"\1# admin_password_hash is in secrets.toml now", config_text, count=1, flags=re.M)
+    keys = dict(flat.get("api_keys") or {})
+    if flat.get("api_key_hash"):        # 2.6's single key
+        keys.setdefault("default", flat["api_key_hash"])
+        config_text = re.sub(r"^([ \t]*)api_key_hash[ \t]*=.*$",
+                             r"\1# api_key_hash is in secrets.toml now, as the key named default",
+                             config_text, count=1, flags=re.M)
+    if keys:
+        have = secrets.get("api_keys") or {}
+        for name, hashed in sorted(keys.items()):
+            if name not in have:
+                secrets_text = set_api_key(secrets_text, name, hashed)
+        moved = sorted(n for n in keys if n not in have)
+        if moved:
+            changes.append(f"Moved the API key{'s' if len(moved) > 1 else ''} {', '.join(moved)} to secrets.toml")
+        kept = sorted(n for n in keys if n in have)
+        if kept:
+            changes.append(f"Commented out the API key{'s' if len(kept) > 1 else ''} {', '.join(kept)} in "
+                           "config.toml. secrets.toml already has a key with that name, which is the one used")
+        lines = config_text.split("\n")
+        section = api_keys_section(lines)
+        for i in range(section[0] + 1, section[1]) if section else ():
+            m = re.match(r"([ \t]*)([A-Za-z0-9_-]+)[ \t]*=", lines[i])
+            if m:
+                lines[i] = f"{m.group(1)}# {m.group(2)} is in secrets.toml now"
+        config_text = "\n".join(lines)
+    if HASH_RE.search(config_text):
+        config_text = HASH_RE.sub("(hash removed, see secrets.toml)", config_text)
+        changes.append("Took old hashes out of comments in config.toml")
+    return config_text, secrets_text, changes
+
+
+def update_secrets(path, change):
+    """Like update_config, for secrets.toml next to the config at path. A password hash or
+    API keys still in config.toml are moved first, so a change here can't be undone by them.
+    Returns (secrets text before, secrets text saved or None)."""
+    with config_lock(path):
+        with open(path) as f:
+            config_text = f.read()
+        old = read_secrets_text(path)
+        config_new, base, moved = move_secrets_text(config_text, old)
+        new = change(base)
+        if new is None or new == old:
+            return old, None
+        write_private(secrets_path(path), new)          # first, so the hashes are never in neither file
+        if config_new != config_text:
+            save_config(path, config_text, config_new)
+            log("CONFIG", f"{'. '.join(moved)}")
+        return old, new
 
 
 SAVE_LOCK = threading.Lock()        # for threads in this process, and on Windows, which has no flock
@@ -520,30 +699,38 @@ def migrate_config_text(text, example_text):
 
 
 def migrate_config(path, dry_run=False, out=print):
-    """Bring the config at path up to date. Returns an exit code."""
+    """Bring the config at path up to date, and move the password hash and API keys from it
+    to secrets.toml. Returns an exit code."""
     example = next((p for p in EXAMPLE_PATHS if os.path.exists(p)), None)
     example_text = open(example).read() if example else ""
-    found = {}
 
-    def change(text):
+    def migrate():
+        with open(path) as f:
+            text = f.read()
+        secrets = read_secrets_text(path)
         new, changes, problems = migrate_config_text(text, example_text)
-        found.update(text=text, new=new, changes=changes, problems=problems)
-        broken = any("not valid TOML" in p for p in problems) and new == text
-        return None if dry_run or broken or not changes else new
+        if any("not valid TOML" in p for p in problems) and new == text:
+            return text, new, changes, problems
+        new, new_secrets, moved = move_secrets_text(new, secrets)
+        changes = changes + moved
+        if changes and not dry_run:
+            if new_secrets != secrets:
+                write_private(secrets_path(path), new_secrets)      # first, so the hashes are never lost
+            save_config(path, text, new)
+        return text, new, changes, problems
 
     try:
         if dry_run:
-            with open(path) as f:
-                change(f.read())
+            text, new, changes, problems = migrate()
         else:
-            update_config(path, change)
+            with config_lock(path):
+                text, new, changes, problems = migrate()
     except FileNotFoundError:
         out(f"{path} not found")
         return 1
     except PermissionError:
-        out(f"Can't read or write {path}. Run it with sudo.")
+        out(f"Can't read or write {path} and {secrets_path(path)}. Run it with sudo.")
         return 1
-    text, new, changes, problems = found["text"], found["new"], found["changes"], found["problems"]
     if any("not valid TOML" in p for p in problems) and new == text:
         for p in problems:
             out(p)

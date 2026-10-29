@@ -11,7 +11,7 @@ import time
 import unittest
 from unittest import mock
 
-from helpers import HERE, assert_private
+from helpers import HERE, assert_mode, assert_private
 from couchlink import admin, auth, config, setup_pc
 
 
@@ -87,11 +87,12 @@ class AtomicWriteTests(unittest.TestCase):
 
     def test_saved_files_are_private(self):
         path = example_copy(self)
-        os.chmod(path, 0o644)           # a new file takes its place, so old permissions don't carry over
+        os.chmod(path, 0o666)           # a new file takes its place, so old permissions don't carry over
         config.save_config(path, read(path), read(path) + "raw_debug = false\n")
         code_path = auth.setup_code_path(path)
         auth.make_setup_code(path)
-        for p in (path, path + ".bak", code_path):
+        assert_mode(self, path, 0o644)              # it holds no hashes
+        for p in (path + ".bak", code_path):
             assert_private(self, p)
         self.assertEqual(leftovers(path), ["setup-code"])
 

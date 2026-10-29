@@ -988,16 +988,17 @@ class ActionTests(unittest.TestCase):
         lines = []
         self.assertEqual(setup_pc.new_api_key(path, "home-assistant", out=lines.append), 0)
         key = lines[0].split(": ", 1)[1]
-        text = open(path).read()
-        self.assertNotIn(key, text)
-        assert_private(self, path)     # only root can read the hashes
+        secrets = config.secrets_path(path)
+        self.assertNotIn(key, open(secrets).read())
+        self.assertNotIn("home-assistant", open(path).read())     # the hash isn't in config.toml
+        assert_private(self, secrets)     # only root can read the hashes
         settings, problems = config.load_config(path)
         self.assertEqual(problems, [])
         self.assertEqual(settings["api_keys"], {"home-assistant": auth.hash_api_key(key)})
         setup_pc.new_api_key(path, "phone", out=lines.append)       # another name keeps the first
         self.assertEqual(sorted(config.load_config(path)[0]["api_keys"]), ["home-assistant", "phone"])
         setup_pc.new_api_key(path, "home-assistant", out=lines.append)   # the same name replaces it
-        self.assertEqual(open(path).read().count("home-assistant ="), 1)
+        self.assertEqual(open(secrets).read().count("home-assistant ="), 1)
         self.assertNotEqual(config.load_config(path)[0]["api_keys"]["home-assistant"], auth.hash_api_key(key))
         self.assertEqual(setup_pc.new_api_key(path, "bad name!", out=lines.append), 1)
 

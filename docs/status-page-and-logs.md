@@ -112,8 +112,9 @@ or setup codes, from one address lock it out for a minute. Logins, wrong passwor
 change are logged as `[ADMIN]`. Only this page can make changes, so another
 web site can't use your login.
 
-The password is stored as a salted hash. The config file holds that hash and
-the API keys' hashes, so only root can read it.
+The password is stored as a salted hash, in `/etc/couchlink/secrets.toml`,
+along with the API keys' hashes. Only root can read that file. `config.toml`
+holds no secrets.
 
 ## API
 
@@ -128,7 +129,7 @@ sudo systemctl restart couchlink
 ```
 
 A key is shown once. Copy it somewhere safe, such as a password manager. Only
-a hash of it is saved in the config, so it can't be shown again. Generating a
+a hash of it is saved, in `secrets.toml`, so it can't be shown again. Generating a
 key with a name that already exists replaces that key. Keys stay until you
 revoke them. The log names the key each request used, such as
 `Wake PC requested from 192.168.1.20 (key home-assistant)`.

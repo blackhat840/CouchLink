@@ -12,7 +12,7 @@ import unittest
 import urllib.error
 import urllib.request
 
-from helpers import BASE, HERE, REAL, Sim, assert_private, msg
+from helpers import BASE, HERE, REAL, Sim, assert_mode, assert_private, msg
 from couchlink import auth, config, setup_pc, web
 
 PASSWORD = "sofa-console"
@@ -59,7 +59,7 @@ class PasswordTests(unittest.TestCase):
         self.assertEqual(setup_pc.set_admin_password(path, out=lines.append, secret=lambda q: answers.pop(0)), 0)
         stored = config.load_config(path)[0]["admin_password_hash"]
         self.assertTrue(auth.check_password(PASSWORD, stored))
-        assert_private(self, path)
+        assert_private(self, config.secrets_path(path))
         answers = ["short", "short", "a b c d e f", "different", "x", "y"]
         self.assertEqual(setup_pc.set_admin_password(path, out=lines.append, secret=lambda q: answers.pop(0)), 1)
         self.assertEqual(config.load_config(path)[0]["admin_password_hash"], stored)   # unchanged
@@ -119,7 +119,8 @@ class ApiKeysConfigTests(unittest.TestCase):
         self.assertEqual((problems, settings["api_keys"]), ([], {"default": old}))
         with open(path) as f:
             text = f.read()
-        self.assertIn(f'# api_key_hash = "{old}"', text)
+        self.assertNotIn(old, text)                         # moved to secrets.toml, not left in a comment
+        self.assertIn(old, open(config.secrets_path(path)).read())
         self.assertTrue(any("as the key named default" in line for line in lines))
 
     def test_new_settings_go_before_the_keys(self):
@@ -137,8 +138,8 @@ class ApiKeysConfigTests(unittest.TestCase):
     def test_saved_files_are_private(self):
         path = config_copy(self)
         config.save_config(path, "old\n", "new\n")
-        for p in (path, path + ".bak"):
-            assert_private(self, p)
+        assert_mode(self, path, 0o644)              # no hashes, so anyone can read it
+        assert_private(self, path + ".bak")         # it may be from before the hashes moved
 
 
 class AdminPageTests(unittest.TestCase):

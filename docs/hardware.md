@@ -61,7 +61,8 @@ What that TV did on the bus:
 ### Your hardware
 
 If you get it working on other hardware, please open an issue with your TV
-and soundbar models and what you saw in the trace.
+and soundbar models, what you saw in the trace, and the output of
+`sudo couchlink --share-config`.
 
 ---
 

@@ -107,6 +107,14 @@ installed_version() {
 }
 # Runs the couchlink package next to this script, for the checks before it is installed.
 new_couchlink() { PYTHONPATH="$HERE" python3 -m couchlink "$@"; }
+# 0600 for a config that still holds a password or key hash, even in a comment, else 0644
+config_mode() {
+    if PYTHONPATH="$HERE" python3 -c 'import sys; from couchlink.config import has_secrets; sys.exit(not has_secrets(open(sys.argv[1]).read()))' "$1"; then
+        echo 0600
+    else
+        echo 0644
+    fi
+}
 have_tty() { (exec </dev/tty) 2>/dev/null; }
 
 # Talks to GitHub with Python's standard library, so nothing extra is needed.
@@ -187,6 +195,7 @@ BIN="$ROOT/usr/local/bin/couchlink"
 LIB="$ROOT/usr/local/lib/couchlink"
 CONF_DIR="$ROOT/etc/couchlink"
 CONF="$CONF_DIR/config.toml"
+SECRETS="$CONF_DIR/secrets.toml"
 UNIT_DIR="$ROOT/etc/systemd/system"
 OLD_VER=""
 # Under a test root the logs go there too, so two installers never share one.
@@ -327,11 +336,14 @@ MIGRATED=""
 CONFIG_UPDATED=0
 if [ "$UPDATE" = 1 ]; then
     say "Checking your config against the new version"
-    # Bring a copy up to date. Yours is only replaced once the new version is installed.
-    MIGRATED="$LOG_DIR/couchlink-migrated.toml"
+    # Bring copies up to date. Yours are only replaced once the new version is installed.
+    # This also moves the password hash and API keys from config.toml to secrets.toml.
+    MIG_DIR="$(mktemp -d)"
+    MIGRATED="$MIG_DIR/config.toml"
     install -m 0600 "$CONF" "$MIGRATED"
+    [ ! -f "$SECRETS" ] || install -m 0600 "$SECRETS" "$MIG_DIR/secrets.toml"
     new_couchlink --config "$MIGRATED" --migrate-config \
-        | sed "s|$MIGRATED|your config|g" \
+        | sed "s|$MIG_DIR|$CONF_DIR|g" \
         || die "Couldn't bring your config up to date, so nothing was changed."
     rm -f "$MIGRATED.bak"
     if new_couchlink --config "$MIGRATED" --check-config > "$CHECK_LOG" 2>&1; then
@@ -363,25 +375,37 @@ chmod 0755 "$BIN.new"
 mv "$BIN.new" "$BIN"
 echo "Installed $LIB (${NEW_VER:-unknown version}) and the couchlink command"
 
-# The config holds the settings page's password hash and the API key hashes, so only
-# root can read it.
+# secrets.toml holds the settings page's password hash and the API key hashes, so only root
+# can read it. config.toml holds no secrets, so anyone can read it, unless it still has hashes
+# from before they moved. The .bak may be from before, so it stays root only.
+if [ -n "$MIGRATED" ] && [ -f "$MIG_DIR/secrets.toml" ] && ! cmp -s "$MIG_DIR/secrets.toml" "$SECRETS"; then
+    install -m 0600 "$MIG_DIR/secrets.toml" "$SECRETS"
+fi
 if [ -n "$MIGRATED" ] && ! cmp -s "$MIGRATED" "$CONF"; then
     install -m 0600 "$CONF" "$CONF.bak"
-    install -m 0600 "$MIGRATED" "$CONF"
+    install -m "$(config_mode "$MIGRATED")" "$MIGRATED" "$CONF"
     echo "Brought $CONF up to date (the previous version is in $CONF.bak)"
     CONFIG_UPDATED=1
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
 elif [ -f "$CONF" ]; then
-    chmod 0600 "$CONF"
+    chmod "$(config_mode "$CONF")" "$CONF"
     [ ! -f "$CONF.bak" ] || chmod 0600 "$CONF.bak"
     echo "Kept your existing $CONF"
     install -m 0644 "$HERE/couchlink.example.toml" "$CONF_DIR/config.example.toml"
     echo "Latest example saved as $CONF_DIR/config.example.toml for comparison"
 else
-    install -m 0600 "$HERE/couchlink.example.toml" "$CONF"
+    install -m 0644 "$HERE/couchlink.example.toml" "$CONF"
     echo "Created $CONF from the example"
 fi
-[ -z "$MIGRATED" ] || rm -f "$MIGRATED"
+if [ ! -f "$SECRETS" ]; then
+    PYTHONPATH="$HERE" python3 -c 'import sys; from couchlink.config import SECRETS_HEADER; sys.stdout.write(SECRETS_HEADER)' \
+        > "$SECRETS.new"
+    chmod 0600 "$SECRETS.new"
+    mv "$SECRETS.new" "$SECRETS"
+    echo "Created $SECRETS for the settings page's password and the API keys, readable by root only"
+fi
+chmod 0600 "$SECRETS"
+[ -z "$MIGRATED" ] || rm -rf "$MIG_DIR"
 
 SERVICE_FILE="$UNIT_DIR/couchlink.service"
 SERVICE_NEW="$(mktemp)"
@@ -576,9 +600,8 @@ PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 PI_NAME="$(hostname 2>/dev/null || echo pi)"
 PAGE="http://${PI_IP:-$PI_NAME.local}:8080"
 CODE=""
-if ! grep -q '^admin_password_hash *= *"pbkdf2' "$CONF" 2>/dev/null; then
-    CODE="$(python3 "$BIN" --config "$CONF" --setup-code 2>/dev/null | sed -n 's/^Setup code: //p')"
-fi
+# --setup-code only prints a code if the settings page has no password yet
+CODE="$(python3 "$BIN" --config "$CONF" --setup-code 2>/dev/null | sed -n 's/^Setup code: //p')"
 
 say "Done. Next steps"
 if [ -n "$CODE" ]; then

@@ -100,7 +100,7 @@ body.stale .hero, body.stale .grid, body.stale .console { opacity: 0.5; }
 
 /* hero */
 .hero { display: grid; grid-template-columns: auto 1fr; gap: 22px; align-items: center; padding: 24px; overflow: hidden; }
-.hero::after {
+.hero::after, .form-panel::after {
   content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
   background: linear-gradient(115deg, var(--accent-soft), transparent 35%, transparent 70%, rgba(167, 139, 250, 0.25));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
@@ -115,7 +115,8 @@ body.stale .hero, body.stale .grid, body.stale .console { opacity: 0.5; }
 }
 .orb svg { width: 52px; height: 52px; }
 body[data-state="waking"] .orb::before,
-body[data-state="sleeping"] .orb::before {
+body[data-state="sleeping"] .orb::before,
+.orb.busy::before {
   content: ""; position: absolute; inset: -8px; border-radius: 50%;
   border: 2px solid transparent; border-top-color: var(--accent); border-right-color: var(--accent);
   animation: spin 1.1s linear infinite;
@@ -285,6 +286,20 @@ legend { padding: 0 6px; font: 600 11px var(--mono); letter-spacing: 0.16em; tex
 .newkey[hidden] { display: none; }
 .newkey code { word-break: break-all; font-size: 14px; color: var(--cyan); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* the setup cards look like the status card: the orb, a big title, and tiles for what was found */
+body.admin { --accent: var(--cyan); --accent-soft: rgba(34, 211, 238, 0.35); }
+.form-panel.hero { align-items: start; padding: 24px; }
+.form-panel.hero > div { min-width: 0; }
+.form-panel h1.state { margin: 6px 0 10px; font-size: clamp(28px, 5vw, 40px); letter-spacing: 0.06em; }
+.hero.attention { --accent: var(--amber); --accent-soft: rgba(251, 191, 36, 0.35); }
+.todo ul { margin: 0; padding-left: 20px; line-height: 1.6; }
+.form-panel .grid { margin: 14px 0 0; }
+.form-panel .grid[hidden] { display: none; }
+@media (max-width: 560px) {
+  .form-panel.hero { grid-template-columns: 1fr; padding: 18px 16px; }
+  .form-panel.hero .orb { margin-top: 0; }
+}
 
 /* without a TV (use_tv = false), the TV's parts of the page are hidden */
 body.no-tv #tTv, body.no-tv #tIn, body.no-tv #tGuard, body.no-tv #tSleep, body.no-tv .path,

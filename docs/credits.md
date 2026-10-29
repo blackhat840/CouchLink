@@ -4,7 +4,7 @@ The projects CouchLink builds on, related projects, and trademarks.
 
 ## Projects CouchLink builds on
 
-CouchLink stands on the work of these projects:
+CouchLink wouldn't work without these:
 
 - **[libcec](https://github.com/Pulse-Eight/libcec)** by Pulse-Eight, which
   provides `cec-client`. CouchLink does all of its CEC talking through

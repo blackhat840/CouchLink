@@ -1,10 +1,10 @@
 # Preparing the PC
 
-What to set up on the gaming PC so the Pi can wake it and put it to sleep. Nothing is installed on the PC.
+The Pi has to be able to wake the gaming PC and put it to sleep. That takes a
+few settings on the PC, done once. Nothing gets installed on it.
 
-Do this once on the gaming PC. Run the commands in a terminal: on SteamOS,
-switch to Desktop Mode and open Konsole. On Bazzite, open the terminal app from
-Desktop Mode or the desktop.
+Run the commands in a terminal. On SteamOS, switch to Desktop Mode and open
+Konsole. On Bazzite, open the terminal app from the desktop.
 
 In the examples below, replace `deck` with your username and `192.168.1.50`
 with the PC's IP address. On SteamOS the user is always `deck`. On Bazzite it

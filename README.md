@@ -10,30 +10,26 @@ is installed on the PC.
 
 ## What it does
 
-- **Wakes the PC** with Wake-on-LAN when the TV or soundbar is switched to the
-  PC's input.
-- **Suspends the PC** over SSH when you switch to another input or turn the TV
-  off.
-- **Switches the TV to the PC** when the PC wakes up on its own, for example
-  from a controller. It turns the TV on first if needed.
-- **Handles Sleep from the Steam menu.** CouchLink can switch the TV to another
-  input, turn it off, or leave it alone.
-- **Remote play.** Wake the PC from the status page and keep it awake without
-  the TV, for streaming to a Steam Deck or phone with Steam Link or Moonlight.
-  It also works [without a TV](docs/how-it-works.md#without-a-tv), as a wake
-  and sleep switch for remote play only.
-- **Wake and sleep buttons** on the status page, and an API with named keys
-  for scripts, phone shortcuts and Home Assistant.
-- **A settings page** with a password, to change settings and API keys from a
-  browser.
-- **Undoes automatic input switches** that some TVs and soundbars make right
-  after a device wakes up.
-- **Optional:** forwards TV remote buttons to the PC as a USB keyboard.
-- **Setup in a browser:** after the installer, the settings page finds the
-  PC's MAC address and the HDMI inputs with you. The terminal and the config
-  file are still there for advanced setups.
-- **Safe to try:** a dry run that changes nothing, a status page, and offline
-  tests.
+Switch the TV to the PC and the PC wakes up. Switch to anything else, or turn
+the TV off, and it goes to sleep. Wake the PC with a controller and the TV
+turns on and switches to it.
+
+It also:
+
+- lets Sleep in the Steam menu switch the TV to another input, turn it off,
+  or leave it alone
+- keeps the PC awake without the TV for remote play with Steam Link or
+  Moonlight, and can run [without a TV](docs/how-it-works.md#without-a-tv) at
+  all
+- has wake and sleep buttons on a status page, and an API with named keys for
+  scripts, phone shortcuts and Home Assistant
+- undoes the input switches some TVs and soundbars make on their own right
+  after a device wakes
+- can pass TV remote buttons to the PC as a USB keyboard, if you want
+
+You set it up in a browser. After the installer, a settings page finds the
+PC's MAC address and the HDMI inputs with you. A dry run lets you watch what
+it would do before it does anything.
 
 ## What you need
 

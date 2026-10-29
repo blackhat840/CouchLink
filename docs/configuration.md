@@ -1,8 +1,8 @@
 # Configuration
 
-Finding your CEC addresses, changing settings, and every setting. The settings
-page is the easy way to do both. The terminal and the config file are there as
-advanced options.
+How to find your CEC addresses and change settings, and a list of every
+setting. The settings page does both. The terminal and the config file are
+there if you want them.
 
 ## Finding your CEC addresses
 

@@ -10,6 +10,8 @@ import secrets
 import threading
 import time
 
+from .common import write_private
+
 PASSWORD_ITERATIONS = 100_000       # about a second on a Pi Zero, so guessing is slow
 PASSWORD_RE = re.compile(r"pbkdf2_sha256\$(\d+)\$([0-9a-f]{32})\$([0-9a-f]{64})")
 SESSION_DAYS = 30
@@ -38,10 +40,7 @@ def make_setup_code(config_path):
     if code:
         return code
     code = "-".join("".join(secrets.choice(CODE_LETTERS) for _ in range(4)) for _ in range(2))
-    path = setup_code_path(config_path)
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(code + "\n")
+    write_private(setup_code_path(config_path), code + "\n")
     return code
 
 

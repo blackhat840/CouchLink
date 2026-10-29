@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Logging and constants shared by every part of CouchLink."""
 
+import os
+import tempfile
 import time
 from collections import deque
 
@@ -27,6 +29,38 @@ def log(component, message, level="INFO"):
     if level != "DEBUG":
         LOG_RING.append(f"{time.strftime('%H:%M:%S')} {line}")
     print(line, flush=True)
+
+
+def write_private(path, text):
+    """Replace path with text, readable by root only. The text goes to a new file next to
+    it, which then takes its place in one step. A power cut leaves the old file or the new
+    one, never an empty or half-written one."""
+    folder = os.path.dirname(os.path.abspath(path))
+    fd, temp = tempfile.mkstemp(prefix="." + os.path.basename(path) + ".", suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w") as f:           # mkstemp makes it 0600
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+    except BaseException:
+        try:
+            os.remove(temp)
+        except OSError:
+            pass
+        raise
+    sync_folder(folder)
+
+
+def sync_folder(folder):
+    """Make a rename in folder survive a power cut. Windows, where the tests also run, can't."""
+    if not hasattr(os, "O_DIRECTORY"):
+        return
+    fd = os.open(folder, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 DOCS_URL = "https://github.com/blackhat840/CouchLink/blob/main/docs"

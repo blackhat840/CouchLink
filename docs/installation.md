@@ -264,6 +264,7 @@ diff /etc/couchlink/config.toml /etc/couchlink/config.example.toml
 | `/usr/local/lib/couchlink/` | The program |
 | `/usr/local/bin/couchlink` | The `couchlink` command, which runs the program |
 | `/etc/couchlink/config.toml` | Your settings, readable by root only |
+| `/etc/couchlink/config.toml.lock` | Stops two saves from running at once. It's empty, and safe to leave. |
 | `/etc/systemd/system/couchlink.service` | The service |
 | `/usr/local/bin/couchlink-hid-gadget.sh` and `couchlink-hid.service` | The USB keyboard, with `--with-hid` only |
 

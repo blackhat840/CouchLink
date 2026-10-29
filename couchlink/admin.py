@@ -11,8 +11,8 @@ from .auth import (KEY_NAME_RE, MIN_PASSWORD, SESSION_DAYS, check_password, cook
                    session_ok, setup_code_ok)
 from .cec import NoCec, dotted
 from .common import log
-from .config import (DEFAULTS, load_config, remove_api_key, save_config, set_api_key, set_config_value,
-                     settings_from_text, unset_config_value, validate)
+from .config import (DEFAULTS, load_config, remove_api_key, set_api_key, set_config_value, settings_from_text,
+                     unset_config_value, update_config, validate)
 from .setup_pc import PLACEHOLDERS, check_ssh, find_mac
 
 COOKIE = "couchlink_admin"
@@ -206,8 +206,19 @@ class Admin:
             return 400, {"ok": False, "result": "too_short",
                          "message": f"Use at least {MIN_PASSWORD} characters"}, (), None
         hashed = hash_password(password)
-        self.write(text, set_config_value(text, "admin_password_hash", hashed), source,
-                   "Settings page password set with the setup code")
+        taken = []
+
+        def change(text, settings):
+            if settings.get("admin_password_hash"):     # someone else got there first
+                taken.append(True)
+                return None
+            return set_config_value(text, "admin_password_hash", hashed)
+        saved = self.update(change)
+        if taken:
+            return 409, {"ok": False, "result": "has_password", "message": "A password is already set. Log in"}, (), None
+        if saved is None:
+            return 503, {"ok": False, "result": "no_config", "message": "CouchLink can't read its config file"}, (), None
+        log("ADMIN", f"Settings page password set with the setup code from {source}")
         remove_setup_code(self.path)
         return 200, {"ok": True, "result": "password_set", "message": "Password set"}, \
             [self.session_cookie(hashed)], None
@@ -257,41 +268,54 @@ class Admin:
             message += ". To set up the key: sudo bash install.sh --setup-ssh"
         return 200, {"ok": ok, "result": "works" if ok else "fails", "message": message}, (), None
 
-    def write(self, old, new, source, what):
-        save_config(self.path, old, new)
-        log("ADMIN", f"{what} from {source}")
+    def update(self, change):
+        """Change the config with no other change in between. change(text, settings) gets the
+        file as it is now and returns the new text, or None to save nothing. Returns the saved
+        text, or None."""
+        def apply(text):
+            settings, _ = settings_from_text(text)
+            return None if settings is None else change(text, settings)
+        try:
+            return update_config(self.path, apply)[1]
+        except OSError:
+            return None
 
     def save_settings(self, params, source):
         values = params.get("values")
         if not isinstance(values, dict):
             return 400, {"ok": False, "result": "bad_request", "message": "Nothing to save"}, (), None
-        text, settings = self.read()
-        if text is None:
+        if self.read()[1] is None:
             return 503, {"ok": False, "result": "no_config", "message": "CouchLink can't read its config file"}, (), None
         options = {key: opts for _, key, _, _, opts in FIELDS}
-        new, changed, problems = text, [], []
-        for key, raw in values.items():
-            kind = KINDS.get(key)
-            if kind is None:
-                problems.append(f"{key} can't be changed here")
-                continue
-            value, error = parse_field(kind, raw, options[key])
-            if error:
-                problems.append(f"{key} {error}")
-                continue
-            if value == settings.get(key) or (value is None and not settings.get(key)):
-                continue
-            new = unset_config_value(new, key) if value is None else set_config_value(new, key, value)
-            changed.append(key)
-        if not problems:
-            checked, problems = settings_from_text(new)
-            if checked is not None:
-                problems = problems + validate(checked)[1]
+        changed, problems = [], []
+
+        def change(text, settings):
+            new = text
+            for key, raw in values.items():
+                kind = KINDS.get(key)
+                if kind is None:
+                    problems.append(f"{key} can't be changed here")
+                    continue
+                value, error = parse_field(kind, raw, options[key])
+                if error:
+                    problems.append(f"{key} {error}")
+                    continue
+                if value == settings.get(key) or (value is None and not settings.get(key)):
+                    continue
+                new = unset_config_value(new, key) if value is None else set_config_value(new, key, value)
+                changed.append(key)
+            if not problems:
+                checked, found = settings_from_text(new)
+                problems.extend(found + (validate(checked)[1] if checked is not None else []))
+            return None if problems or not changed else new
+        saved = self.update(change)
         if problems:
             return 400, {"ok": False, "result": "invalid", "message": "Nothing was saved", "problems": problems}, (), None
         if not changed:
             return 200, {"ok": True, "result": "unchanged", "message": "Nothing changed"}, (), None
-        self.write(text, new, source, f"Settings changed: {', '.join(changed)}")
+        if saved is None:
+            return 503, {"ok": False, "result": "no_config", "message": "CouchLink can't read its config file"}, (), None
+        log("ADMIN", f"Settings changed: {', '.join(changed)} from {source}")
         return 200, {"ok": True, "result": "saved", "message": "Saved. CouchLink is restarting to use them"}, (), \
             lambda: self.events.put(("restart", f"settings were changed ({', '.join(changed)})"))
 
@@ -304,38 +328,66 @@ class Admin:
         if not KEY_NAME_RE.fullmatch(name) or name in DEFAULTS:
             return 400, {"ok": False, "result": "bad_name",
                          "message": "Use a name of letters, digits, - and _, such as home-assistant"}, (), None
-        text, settings = self.read()
-        if name in (settings.get("api_keys") or {}):
-            return 409, {"ok": False, "result": "exists", "message": f"There is already a key named {name}"}, (), None
         key = new_api_key()
-        new = set_api_key(text, name, hash_api_key(key))
-        self.write(text, new, source, f"API key {name} generated")
+        exists = []
+
+        def change(text, settings):
+            if name in (settings.get("api_keys") or {}):
+                exists.append(True)
+                return None
+            return set_api_key(text, name, hash_api_key(key))
+        new = self.update(change)
+        if exists:
+            return 409, {"ok": False, "result": "exists", "message": f"There is already a key named {name}"}, (), None
+        if new is None:
+            return 503, {"ok": False, "result": "no_config", "message": "CouchLink can't read its config file"}, (), None
+        log("ADMIN", f"API key {name} generated from {source}")
         self.keys_changed(settings_from_text(new)[0])
         return 200, {"ok": True, "result": "created", "name": name, "key": key,
                      "message": "Copy the key now. It can't be shown again"}, (), None
 
     def revoke_key(self, params, source):
         name = str(params.get("name") or "")
-        text, settings = self.read()
-        if name not in (settings.get("api_keys") or {}):
+        missing = []
+
+        def change(text, settings):
+            if name not in (settings.get("api_keys") or {}):
+                missing.append(True)
+                return None
+            return remove_api_key(text, name)
+        new = self.update(change)
+        if missing:
             return 404, {"ok": False, "result": "no_key", "message": f"There is no key named {name}"}, (), None
-        new = remove_api_key(text, name)
-        self.write(text, new, source, f"API key {name} revoked")
+        if new is None:
+            return 503, {"ok": False, "result": "no_config", "message": "CouchLink can't read its config file"}, (), None
+        log("ADMIN", f"API key {name} revoked from {source}")
         self.keys_changed(settings_from_text(new)[0])
         return 200, {"ok": True, "result": "revoked", "message": f"Revoked {name}"}, (), None
 
     def change_password(self, params, source):
         current, new_password = str(params.get("current") or ""), str(params.get("new") or "")
-        text, settings = self.read()
-        if not check_password(current, settings.get("admin_password_hash")):
+        checked = self.password_hash()
+        if not check_password(current, checked):
             self.guard.failed(source)
             return 401, {"ok": False, "result": "wrong_password", "message": "The current password is wrong"}, (), None
         if len(new_password) < MIN_PASSWORD:
             return 400, {"ok": False, "result": "too_short",
                          "message": f"Use at least {MIN_PASSWORD} characters"}, (), None
-        hashed = hash_password(new_password)
-        self.write(text, set_config_value(text, "admin_password_hash", hashed), source,
-                   "Settings page password changed")
+        hashed = hash_password(new_password)        # slow, so it's done before taking the lock
+        moved = []
+
+        def change(text, settings):
+            if settings.get("admin_password_hash") != checked:     # changed since it was checked
+                moved.append(True)
+                return None
+            return set_config_value(text, "admin_password_hash", hashed)
+        saved = self.update(change)
+        if moved:
+            return 409, {"ok": False, "result": "changed_meanwhile",
+                         "message": "The password was just changed somewhere else. Log in again"}, (), None
+        if saved is None:
+            return 503, {"ok": False, "result": "no_config", "message": "CouchLink can't read its config file"}, (), None
+        log("ADMIN", f"Settings page password changed from {source}")
         # Every other login ends, because the cookie is signed with the password's hash
         return 200, {"ok": True, "result": "changed", "message": "Password changed"}, \
             [self.session_cookie(hashed)], None

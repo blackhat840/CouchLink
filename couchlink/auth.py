@@ -14,6 +14,48 @@ PASSWORD_ITERATIONS = 100_000       # about a second on a Pi Zero, so guessing i
 PASSWORD_RE = re.compile(r"pbkdf2_sha256\$(\d+)\$([0-9a-f]{32})\$([0-9a-f]{64})")
 SESSION_DAYS = 30
 KEY_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,39}")
+MIN_PASSWORD = 8
+CODE_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"     # no 0/O or 1/I to mix up
+
+
+def setup_code_path(config_path):
+    """The one-time code that lets the first visitor set the settings page's password. It
+    sits next to the config, readable by root only."""
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), "setup-code")
+
+
+def read_setup_code(config_path):
+    try:
+        with open(setup_code_path(config_path)) as f:
+            return f.read().strip() or None
+    except OSError:
+        return None
+
+
+def make_setup_code(config_path):
+    """The setup code, made now if there isn't one yet."""
+    code = read_setup_code(config_path)
+    if code:
+        return code
+    code = "-".join("".join(secrets.choice(CODE_LETTERS) for _ in range(4)) for _ in range(2))
+    path = setup_code_path(config_path)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(code + "\n")
+    return code
+
+
+def remove_setup_code(config_path):
+    try:
+        os.remove(setup_code_path(config_path))
+    except OSError:
+        pass
+
+
+def setup_code_ok(given, config_path):
+    code = read_setup_code(config_path)
+    given = (given or "").strip().upper().replace(" ", "")
+    return bool(code) and hmac.compare_digest(given.replace("-", ""), code.replace("-", ""))
 
 
 def hash_api_key(key):

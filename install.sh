@@ -22,6 +22,10 @@
 #                                the CEC addresses
 #     --setup-cec                find the CEC addresses with the TV on (asks
 #                                whether you have a soundbar or AV receiver)
+#     --setup-ssh                give the Pi an SSH key the PC trusts
+#
+# All of these can also be done on the settings page, http://<pi>:8080/admin,
+# except the SSH key.
 #
 # More update options:
 #
@@ -40,7 +44,8 @@
 #   3. Installs the program in /usr/local/lib/couchlink, with the couchlink
 #      command in /usr/local/bin
 #   4. Creates /etc/couchlink/config.toml from the example (never overwrites yours)
-#   5. Installs couchlink.service, left disabled until you've tested
+#   5. Installs couchlink.service and starts it. Until the settings are complete,
+#      it runs only the settings page, where the setup is finished in a browser
 #   6. With --with-hid: enables USB gadget mode and a keyboard gadget service
 #      (takes effect after a reboot)
 #
@@ -72,6 +77,7 @@ while [ $# -gt 0 ]; do
         --list-releases) LIST=1 ;;
         --setup) SETUP=setup ;;
         --setup-cec) SETUP=setup-cec ;;
+        --setup-ssh) SETUP=setup-ssh ;;
         --release)
             if [ $# -gt 1 ] && [ "${2#-}" = "$2" ]; then RELEASE="$2"; shift; else PICK=1; fi ;;
         --release=*) RELEASE="${1#*=}" ;;
@@ -538,19 +544,17 @@ if [ "$UPDATE" = 1 ]; then
     exit 0
 fi
 
-# ---------------------------------------------------------------- config check
+# ---------------------------------------------------------------- settings
+DOCS="https://github.com/blackhat840/CouchLink/blob/main/docs"
 say "Checking the config"
 if python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
     echo "Config OK"
-else
-    if have_tty && [ "$TEST_MODE" != 1 ]; then
-        say "Settings"
-        echo "CouchLink asks for the PC's address and the other settings now."
-        echo "The CEC addresses come after that, with the TV on."
-        read -r -p "Fill in the settings now? [Y/n] " a </dev/tty
-        if [ "$a" != n ] && [ "$a" != N ]; then
-            python3 "$BIN" --config "$CONF" --setup </dev/tty || warn "Setup did not finish. Run it again with: sudo bash install.sh --setup"
-        fi
+elif have_tty && [ "$TEST_MODE" != 1 ]; then
+    echo "CouchLink still needs a few settings: the PC's address and, with a TV, the HDMI inputs."
+    echo "You can fill them in on the settings page in a browser, or answer questions here."
+    read -r -p "Set up in the browser? [Y/n] " a </dev/tty
+    if [ "$a" = n ] || [ "$a" = N ]; then
+        python3 "$BIN" --config "$CONF" --setup </dev/tty || warn "Setup did not finish. Run it again with: sudo bash install.sh --setup"
         if ! python3 "$BIN" --config "$CONF" --check-config > "$CHECK_LOG" 2>&1; then
             say "CEC addresses"
             echo "Next, CouchLink finds the HDMI addresses of the PC, the Pi and any soundbar or"
@@ -560,35 +564,46 @@ else
                 python3 "$BIN" --config "$CONF" --setup-cec </dev/tty || warn "Not finished. Run it again with: sudo bash install.sh --setup-cec"
             fi
         fi
-    else
-        grep CONFIG "$CHECK_LOG" || cat "$CHECK_LOG"
-        echo "(Expected on a fresh install: fill in the placeholders, see below.)"
     fi
 fi
 
-# ---------------------------------------------------------------- next steps
+# ---------------------------------------------------------------- start it
+# Until the settings are complete, the service runs only the settings page, so the
+# setup can be finished in a browser.
+say "Starting CouchLink"
+run systemctl enable --now couchlink.service
+PI_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+PI_NAME="$(hostname 2>/dev/null || echo pi)"
+PAGE="http://${PI_IP:-$PI_NAME.local}:8080"
+CODE=""
+if ! grep -q '^admin_password_hash *= *"pbkdf2' "$CONF" 2>/dev/null; then
+    CODE="$(python3 "$BIN" --config "$CONF" --setup-code 2>/dev/null | sed -n 's/^Setup code: //p')"
+fi
+
 say "Done. Next steps"
-DOCS="https://github.com/blackhat840/CouchLink/blob/main/docs"
+if [ -n "$CODE" ]; then
+    cat <<SETUP
+1. Open the settings page in a browser on the same network:
+     $PAGE/admin
+   Enter this setup code, then choose a password:
+     $CODE
+   Then fill in the PC's settings and, with a TV, find the HDMI inputs there.
+   To see the code again: sudo couchlink --setup-code
+SETUP
+else
+    cat <<SETUP
+1. The settings page is at $PAGE/admin
+SETUP
+fi
 cat <<STEPS
-1. Fill in the settings, if you skipped it above:
-     sudo bash install.sh --setup
-2. Find the CEC addresses with the TV on, if you skipped it above:
-     sudo bash install.sh --setup-cec
-   To do it by hand instead, see $DOCS/configuration.md
-3. Set up the PC so the Pi can wake it and put it to sleep.
+2. Set up the PC so the Pi can wake it and put it to sleep.
    Guide: $DOCS/preparing-the-pc.md
-4. Give root on the Pi an SSH key the PC trusts. --setup offers to do
-   this. By hand:
-     sudo ssh-keygen -t ed25519 -N "" -f /root/.ssh/id_ed25519
-     sudo ssh-copy-id deck@<pc-ip>
-     sudo ssh deck@<pc-ip> "echo ok"
-5. Try a dry run. It changes nothing. Press Ctrl+C to stop:
-     sudo couchlink --dry-run
-   Status page: http://$(hostname 2>/dev/null || echo '<pi>').local:8080
-6. Go live:
-     sudo systemctl enable --now couchlink.service
+3. Give the Pi an SSH key the PC trusts, so it can put the PC to sleep:
+     sudo bash install.sh --setup-ssh
+   The settings page has a button to check that it works.
+4. Watch it work on the status page, $PAGE, or in the log:
      sudo journalctl -u couchlink.service -f
-7. Later, to update to the latest release, run this from the same folder:
+5. Later, to update to the latest release, run this from the same folder:
      sudo bash install.sh --update
 STEPS
 if [ "$REBOOT_NEEDED" = 1 ]; then

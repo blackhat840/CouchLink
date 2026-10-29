@@ -7,7 +7,7 @@
 <title>Settings | CouchLink</title>
 <link rel="stylesheet" href="/style.css">
 </head>
-<body data-state="unknown" class="admin">
+<body class="admin">
 <div class="wrap">
   <header>
     <div class="brand">
@@ -30,8 +30,13 @@
     <p id="messageText"></p>
   </section>
 
-  <section class="panel form-panel" id="login" hidden>
-    <h1>Log in</h1>
+  <section class="panel form-panel hero" id="login" hidden>
+    <div class="orb">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+    </div>
+    <div>
+    <div class="kicker">Settings</div>
+    <h1 class="state">Log in</h1>
     <form id="loginForm" class="stack">
       <label for="password">Password for the settings page</label>
       <input id="password" type="password" autocomplete="current-password" required>
@@ -40,9 +45,72 @@
         <span class="note" id="loginNote" role="status"></span>
       </div>
     </form>
+    </div>
+  </section>
+
+  <section class="panel form-panel hero" id="setup" hidden>
+    <div class="orb">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg>
+    </div>
+    <div>
+    <div class="kicker">First visit</div>
+    <h1 class="state">Set up</h1>
+    <p class="note">The installer showed a setup code. If you don't have it, run
+      <code>sudo couchlink --setup-code</code> on the Pi. Then choose a password for this page.</p>
+    <form id="setupForm" class="stack">
+      <label for="setupCode">Setup code</label>
+      <input id="setupCode" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH" required>
+      <label for="setupPassword">New password, at least 8 characters</label>
+      <input id="setupPassword" type="password" autocomplete="new-password" minlength="8" required>
+      <label for="setupPassword2">The same password again</label>
+      <input id="setupPassword2" type="password" autocomplete="new-password" minlength="8" required>
+      <div class="row">
+        <button class="btn primary" type="submit">Set password</button>
+        <span class="note" id="setupNote" role="status"></span>
+      </div>
+    </form>
+    </div>
   </section>
 
   <div id="panels" hidden>
+    <section class="panel form-panel hero attention todo" id="todo" hidden>
+      <div class="orb">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>
+      </div>
+      <div>
+      <div class="kicker">Before CouchLink can start</div>
+      <h1 class="state">Almost there</h1>
+      <p>Fill these in below, then save.</p>
+      <ul id="todoList"></ul>
+      </div>
+    </section>
+
+    <section class="panel form-panel hero" id="finder" hidden>
+      <div class="orb" id="finderOrb">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 8h18v6l-3 3H6l-3-3z"/><path d="M7 11h10"/></svg>
+      </div>
+      <div>
+      <div class="kicker">TV, Pi and soundbar</div>
+      <h1 class="state">Find the HDMI inputs</h1>
+      <p class="note">CouchLink can find the inputs for the PC, the Pi and a soundbar by itself. Turn the TV
+        on, and plug in and turn on the PC.</p>
+      <div class="stack">
+        <label for="layout">How is the PC connected?</label>
+        <select id="layout">
+          <option value="tv">To the TV, with no soundbar or receiver</option>
+          <option value="arc">To the TV, with a soundbar or receiver on the TV's ARC or eARC port</option>
+          <option value="bar">To a soundbar or receiver, which is connected to the TV</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn primary" type="button" id="scan">1. Scan the HDMI devices</button>
+        <button class="btn" type="button" id="listen" disabled>2. Listen while I switch to the PC</button>
+        <span class="note" id="finderNote" role="status"></span>
+      </div>
+      <div class="grid" id="devices" hidden></div>
+      </div>
+    </section>
+
     <section class="panel form-panel">
       <h1>Settings</h1>
       <p class="note">Saving checks the values, keeps the comments in the config file, and restarts
@@ -50,6 +118,7 @@
       <form id="settings" class="stack"></form>
       <div class="row">
         <button class="btn primary" type="submit" form="settings" id="save">Save and restart</button>
+        <button class="btn" type="button" id="checkSsh">Check SSH to the PC</button>
         <span class="note" id="saveNote" role="status"></span>
       </div>
       <ul class="problems" id="problems" hidden></ul>

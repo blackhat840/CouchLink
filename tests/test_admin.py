@@ -222,7 +222,7 @@ class AdminPageTests(unittest.TestCase):
             f.write(text)
         status, body = self.request("/admin/api/state")
         self.assertEqual((status, body["result"]), (403, "no_password"))
-        self.assertIn("sudo couchlink --admin-password", body["message"])
+        self.assertIn("sudo couchlink --setup-code", body["message"])
 
     def test_login_and_state(self):
         status, body = self.login("wrong")

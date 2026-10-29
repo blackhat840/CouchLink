@@ -86,14 +86,26 @@ class NoCec:
     def stop(self):
         pass
 
+    def scan(self, timeout=40):
+        return None
+
+    def heard_since(self, since):
+        return []
+
 
 class CecClient:
-    """Owns the cec-client process. Posts ("cec", msg) and ("key", name) events."""
+    """Owns the cec-client process. Posts ("cec", msg) and ("key", name) events. The settings
+    page also uses it to scan the bus and to hear which inputs are switched to."""
 
     def __init__(self, command, events, raw_debug):
         self.events = events
         self.raw_debug = raw_debug
         self.lock = threading.Lock()
+        self.scan_lock = threading.Lock()
+        self.seen = threading.Condition()
+        self.lines = []             # recent output, for scan
+        self.count = 0              # lines read so far
+        self.heard = []             # (time, input) announced lately, newest last
         self.proc = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT, universal_newlines=True, bufsize=1)
@@ -112,8 +124,41 @@ class CecClient:
             self.proc.stdin.write(command + "\n")
             self.proc.stdin.flush()
 
+    def scan(self, timeout=40):
+        """Ask every device on the bus who it is, through the running cec-client. Returns
+        parse_scan's list, or None if cec-client didn't finish in time."""
+        with self.scan_lock:
+            with self.seen:
+                start = self.count
+            self.send("scan")
+            end = time.monotonic() + timeout
+            with self.seen:
+                while True:
+                    new = self.lines[-(self.count - start):] if self.count > start else []
+                    if any("currently active source" in line.lower() for line in new):
+                        return parse_scan("\n".join(new))
+                    left = end - time.monotonic()
+                    if left <= 0:
+                        return None
+                    self.seen.wait(left)
+
+    def heard_since(self, since):
+        """The inputs announced on the bus since since (a time.monotonic value), oldest first."""
+        with self.seen:
+            return [addr for t, addr in self.heard if t > since]
+
+    def _keep(self, line):
+        with self.seen:
+            self.lines = (self.lines + [line.rstrip("\n")])[-400:]
+            self.count += 1
+            addr = announced_address(parse_rx(line))
+            if addr:
+                self.heard = (self.heard + [(time.monotonic(), addr)])[-50:]
+            self.seen.notify_all()
+
     def _reader(self):
         for line in self.proc.stdout:
+            self._keep(line)
             if ">>" in line or "<<" in line:
                 TRAFFIC_RING.append(f"{time.strftime('%H:%M:%S')} {line.strip()}")
                 if self.raw_debug:

@@ -29,8 +29,9 @@ is installed on the PC.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
 - **Optional:** forwards TV remote buttons to the PC as a USB keyboard.
-- **Guided setup:** the installer asks for your settings and finds the CEC
-  addresses with you.
+- **Setup in a browser:** after the installer, the settings page finds the
+  PC's MAC address and the HDMI inputs with you. The terminal and the config
+  file are still there for advanced setups.
 - **Safe to try:** a dry run that changes nothing, a status page, and offline
   tests.
 
@@ -60,18 +61,19 @@ GitHub account needed. New to the Pi? Follow the
 
 Then:
 
-1. Answer the installer's questions about the PC. To change them later, run
-   `sudo bash install.sh --setup`.
-2. Let the installer find the CEC addresses, with the TV on. It asks whether
-   you have a soundbar or AV receiver, then listens while you switch to the PC.
-   To do it again later, run `sudo bash install.sh --setup-cec`. Without a TV,
-   this step is skipped.
+1. Open the settings page the installer shows, such as
+   `http://192.168.1.20:8080/admin`, on your phone or computer. Enter the setup
+   code it printed and choose a password.
+2. Fill in the PC's address, and with the TV on, let **Find the HDMI inputs**
+   find the PC, the Pi and any soundbar. Save, and CouchLink starts working.
 3. Set up the PC so the Pi can wake it and put it to sleep. See
    [Preparing the PC](docs/preparing-the-pc.md).
-4. Try a dry run, then go live. See
-   [Installation](docs/installation.md#testing-with-a-dry-run).
-5. Set a password for the settings page, at `http://<pi>:8080/admin`, if you
-   didn't during setup: `sudo couchlink --admin-password`.
+4. Give the Pi an SSH key the PC trusts: `sudo bash install.sh --setup-ssh`.
+
+![Find the HDMI inputs on the settings page, with the PC, the Pi and the soundbar found](docs/setup-hdmi-inputs.png)
+
+Rather set up in the terminal, or edit the config file yourself? See
+[Advanced setup](docs/installation.md#advanced-setup).
 
 ## Updating
 

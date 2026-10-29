@@ -1,6 +1,8 @@
 # Configuration
 
-Finding your CEC addresses, editing the config file, and every setting.
+Finding your CEC addresses, changing settings, and every setting. The settings
+page is the easy way to do both. The terminal and the config file are there as
+advanced options.
 
 ## Finding your CEC addresses
 
@@ -9,15 +11,39 @@ in. A device on TV input 2 is `2.0.0.0`. A device on input 1 of a soundbar
 that is itself on TV input 1 is `1.1.0.0`. CouchLink accepts either `1.1.0.0` or
 the short form `11:00`.
 
-CouchLink finds them for you. Turn the TV on, plug in and turn on the PC, and
-run:
+CouchLink finds them for you. Turn the TV on, and plug in and turn on the PC.
+
+### On the settings page
+
+Open the [settings page](status-page-and-logs.md#settings-page) and use **Find
+the HDMI inputs**:
+
+1. Choose how the PC is connected: to the TV, to the TV with a soundbar or AV
+   receiver on the ARC port, or to a soundbar or AV receiver.
+2. Press **Scan the HDMI devices**. Every device that speaks CEC is listed, and
+   the Pi's input and the soundbar's are filled in.
+3. Press **Listen while I switch to the PC**, then switch the TV to the PC with
+   the remote. The PC usually doesn't speak CEC, so this is how its input is
+   found. If it hears nothing within a minute, your TV may not announce the
+   switch. Type the PC's input into the field instead.
+4. Check the inputs in the form, then press **Save and restart**.
+
+![Find the HDMI inputs after a scan and a switch to the PC. The PC is on TV input 2, the Pi on input 4 and the soundbar on input 1.](setup-hdmi-inputs.png)
+
+The lit tiles are the inputs CouchLink will use: the PC in green, the Pi in
+cyan and the soundbar in violet. The others are the rest of the devices on
+the bus.
+
+CouchLink keeps running while it does this. It uses the same connection to
+the TV.
+
+### Advanced: finding them in the terminal
 
 ```bash
 sudo bash install.sh --setup-cec
 ```
 
-`sudo couchlink --setup-cec` does the same. The installer offers it after the
-settings on a first install. It:
+`sudo couchlink --setup-cec` does the same. It:
 
 1. Asks how the PC is connected: to the TV, to the TV with a soundbar or AV
    receiver on the ARC port, or to a soundbar or AV receiver.
@@ -33,7 +59,7 @@ settings on a first install. It:
 6. Saves `pc_addresses`, `pi_address`, `soundbar_address` and the sleep input,
    keeping the previous file as `config.toml.bak`.
 
-### By hand
+### Advanced: finding them by hand
 
 **Step 1: scan the bus.**
 
@@ -72,15 +98,22 @@ Here the soundbar (logical address `5`) reports that its active input is now
 Stop `couchlink.service` before running either command. Only one program can
 use the CEC adapter at a time.
 
-## The config file
+## Changing settings
 
-The installer creates `/etc/couchlink/config.toml`.
+The settings are kept in `/etc/couchlink/config.toml`, which the installer
+creates.
 
-### The settings
+### On the settings page
 
-Everything except the CEC addresses can be filled in by answering a few
-questions. The installer asks them at the end of a first install. To run them
-again at any time:
+The [settings page](status-page-and-logs.md#settings-page) is the easy way. It
+has the PC's address, the HDMI inputs, what happens when the PC wakes or
+sleeps by itself, the status page's buttons, a few timings, the API keys and
+its own password. Saving checks the values, keeps the comments in the file,
+and restarts CouchLink. The rest of the settings are only in the file.
+
+### Advanced: in the terminal
+
+To answer questions in the terminal instead:
 
 ```bash
 sudo bash install.sh --setup
@@ -109,52 +142,11 @@ Then it offers to set up the SSH key (step 5 of
 wake it first, and pauses `couchlink.service` so the PC isn't put back to
 sleep. If SSH fails, it says why and what to do.
 
-### Updating an older config
+### Advanced: editing the file
 
-`install.sh --update` brings your config up to date by itself. To do it by
-hand, or to see what would change first:
-
-```bash
-sudo couchlink --migrate-config --dry-run   # only show the changes
-sudo couchlink --migrate-config             # make them
-```
-
-It explains every change it makes:
-
-- Settings added in newer versions are added, with their default values and
-  comments, in the right section.
-- A setting name with a typo is fixed, for example `pc_adress` becomes
-  `pc_addresses`.
-- Settings that were renamed get their new name. Settings that CouchLink does
-  not know, or that were removed, are commented out, never deleted.
-- A true, false or number written in quotes is fixed, for example `"false"`
-  becomes `false`.
-
-Things only you can fill in, such as the CEC addresses, are listed at the end.
-The previous version of the file is saved as `config.toml.bak`.
-
-The [settings page](status-page-and-logs.md#settings-page) changes the most
-common settings from a browser.
-
-### API keys
-
-Keys for scripts and Home Assistant are in their own table at the end of the
-file, one per line, with only a hash of each key:
-
-```toml
-[api_keys]
-home-assistant = "sha256:..."
-phone = "sha256:..."
-```
-
-Generate and revoke them on the settings page, or generate one with
-`sudo couchlink --new-api-key NAME`. A config from 2.6 with `api_key_hash`
-keeps working, and the next update moves that key here as `default`.
-
-### Editing the file
-
-The CEC addresses, and any other setting, go in the file itself. Only root can
-read it, because it holds password and key hashes, so edit it with:
+Every setting can go in the file itself, including the ones the settings page
+doesn't have. Only root can read it, because it holds password and key
+hashes, so edit it with:
 
 ```bash
 sudo nano /etc/couchlink/config.toml
@@ -187,10 +179,54 @@ sudo couchlink --check-config
 ```
 
 It prints every setting with the value CouchLink will use, or a list of what is
-wrong. Misspelled setting names are reported too.
+wrong. Misspelled setting names are reported too. Then restart CouchLink to use
+the change:
+
+```bash
+sudo systemctl restart couchlink
+```
 
 Section names such as `[pc]` are only there for readability. Each section may
 appear only once in the file.
+
+### Updating an older config
+
+`install.sh --update` brings your config up to date by itself. To do it by
+hand, or to see what would change first:
+
+```bash
+sudo couchlink --migrate-config --dry-run   # only show the changes
+sudo couchlink --migrate-config             # make them
+```
+
+It explains every change it makes:
+
+- Settings added in newer versions are added, with their default values and
+  comments, in the right section.
+- A setting name with a typo is fixed, for example `pc_adress` becomes
+  `pc_addresses`.
+- Settings that were renamed get their new name. Settings that CouchLink does
+  not know, or that were removed, are commented out, never deleted.
+- A true, false or number written in quotes is fixed, for example `"false"`
+  becomes `false`.
+
+Things only you can fill in, such as the CEC addresses, are listed at the end.
+The previous version of the file is saved as `config.toml.bak`.
+
+### API keys
+
+Keys for scripts and Home Assistant are in their own table at the end of the
+file, one per line, with only a hash of each key:
+
+```toml
+[api_keys]
+home-assistant = "sha256:..."
+phone = "sha256:..."
+```
+
+Generate and revoke them on the settings page, or generate one with
+`sudo couchlink --new-api-key NAME`. A config from 2.6 with `api_key_hash`
+keeps working, and the next update moves that key here as `default`.
 
 ## Settings reference
 

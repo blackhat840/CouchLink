@@ -76,12 +76,13 @@ def request_problem(headers):
     return None
 
 
-def start_dashboard(port, controller, events=None, config_path=None):
+def start_dashboard(port, controller, events=None, config_path=None, cec=None):
     """Serve the status page, /api and the settings page. Returns the server, or None if the
     port is taken."""
     files = load_static()
     guard = KeyGuard()
-    admin = Admin(controller, events, config_path, guard)
+    admin = Admin(controller, events, config_path, guard, cec)
+    setup_mode = getattr(controller, "setup_mode", False)
 
     class Handler(BaseHTTPRequestHandler):
         def send_json(self, status, payload, headers=()):
@@ -177,6 +178,13 @@ def start_dashboard(port, controller, events=None, config_path=None):
             if path == "/admin/api/state":
                 status, payload = admin.state(self.headers)
                 return self.send_json(status, payload)
+            if setup_mode and path in ("/", "/index.html"):
+                # Nothing to show until the setup is done, so go to the settings page
+                self.send_response(302)
+                self.send_header("Location", "/admin")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if path.startswith("/api"):
                 body = json.dumps(controller.snapshot(), indent=2).encode()
                 ctype = "application/json"

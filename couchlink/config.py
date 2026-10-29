@@ -6,10 +6,18 @@ import difflib
 import json
 import os
 import re
+import threading
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 from . import VERSION
 from .auth import KEY_NAME_RE, PASSWORD_RE
+from .common import write_private
+
+try:
+    import fcntl
+except ImportError:                  # Windows, where the tests also run
+    fcntl = None
 
 
 try:
@@ -294,18 +302,75 @@ def set_config_value(text, key, value):
     return text[:m.start()] + line + text[m.end():]
 
 
-def write_private(path, text):
-    """Write a file only root can read. The config holds password and key hashes."""
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        f.write(text)
-    os.chmod(path, 0o600)       # in case it already existed with other permissions
-
-
 def save_config(path, old, new):
-    """Write new to path, keeping old as path.bak. Both readable by root only."""
+    """Write new to path, keeping old as path.bak. Both readable by root only, since the
+    config holds password and key hashes. If the .bak can't be written, path is left alone."""
     write_private(path + ".bak", old)
     write_private(path, new)
+
+
+SAVE_LOCK = threading.Lock()        # for threads in this process, and on Windows, which has no flock
+
+
+@contextmanager
+def config_lock(path):
+    """Only one change to the config at a time: from the settings page, --setup, or anything else."""
+    with SAVE_LOCK:
+        fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            if fcntl:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)                # this also lets go of the flock
+
+
+def update_config(path, change):
+    """Read the config, change it and save it, with no other change in between. change(text)
+    gets the text as it is now and returns the new text, or None to leave it as it is.
+    Returns (text before, text saved or None)."""
+    with config_lock(path):
+        with open(path) as f:
+            old = f.read()
+        new = change(old)
+        if new is None or new == old:
+            return old, None
+        save_config(path, old, new)
+        return old, new
+
+
+def save_answers(path, started, answer, answered):
+    """Save the answers from --setup or --setup-cec, which read started when they began, minutes
+    ago. answer(text) puts the answers into config text, and answered names the settings they
+    set. If the config was saved since, for example from the settings page, the answers go into
+    the newer text, so the other changes in it are kept. Returns (saved, kept, problem): whether
+    anything was saved, the settings kept from the newer text, and why nothing was saved."""
+    result = {"kept": [], "problem": None}
+
+    def change(text):
+        if text == started:
+            return answer(text)
+        new = answer(text)
+        before, now = settings_from_text(started)[0] or {}, settings_from_text(text)[0]
+        wanted, got = settings_from_text(answer(started))[0], settings_from_text(new)[0]
+        if now is None or wanted is None or got is None:
+            result["problem"] = "the config was changed while you answered, and it isn't valid TOML now"
+            return None
+        for key in sorted(answered):
+            if key == "api_keys":       # the newer text may have other keys, which stay
+                added = {n: h for n, h in wanted["api_keys"].items() if before.get("api_keys", {}).get(n) != h}
+                ok = all(got["api_keys"].get(n) == h for n, h in added.items())
+            else:
+                ok = got.get(key) == wanted.get(key)
+            if not ok:
+                result["problem"] = (f"the config was changed while you answered, and {key} doesn't come "
+                                     "out as you answered in the newer text")
+                return None
+        result["kept"] = sorted(k for k in now if k not in answered and now.get(k) != before.get(k))
+        return new
+
+    _, saved = update_config(path, change)
+    return saved is not None, result["kept"], result["problem"]
 
 
 def api_keys_section(lines):
@@ -456,15 +521,29 @@ def migrate_config_text(text, example_text):
 
 def migrate_config(path, dry_run=False, out=print):
     """Bring the config at path up to date. Returns an exit code."""
+    example = next((p for p in EXAMPLE_PATHS if os.path.exists(p)), None)
+    example_text = open(example).read() if example else ""
+    found = {}
+
+    def change(text):
+        new, changes, problems = migrate_config_text(text, example_text)
+        found.update(text=text, new=new, changes=changes, problems=problems)
+        broken = any("not valid TOML" in p for p in problems) and new == text
+        return None if dry_run or broken or not changes else new
+
     try:
-        with open(path) as f:
-            text = f.read()
+        if dry_run:
+            with open(path) as f:
+                change(f.read())
+        else:
+            update_config(path, change)
     except FileNotFoundError:
         out(f"{path} not found")
         return 1
-    example = next((p for p in EXAMPLE_PATHS if os.path.exists(p)), None)
-    example_text = open(example).read() if example else ""
-    new, changes, problems = migrate_config_text(text, example_text)
+    except PermissionError:
+        out(f"Can't read or write {path}. Run it with sudo.")
+        return 1
+    text, new, changes, problems = found["text"], found["new"], found["changes"], found["problems"]
     if any("not valid TOML" in p for p in problems) and new == text:
         for p in problems:
             out(p)
@@ -476,11 +555,6 @@ def migrate_config(path, dry_run=False, out=print):
         for c in changes:
             out(f"  - {c}")
         if not dry_run:
-            try:
-                save_config(path, text, new)
-            except PermissionError:
-                out(f"Can't write {path}. Run it with sudo.")
-                return 1
             out(f"Saved. The previous version is in {path}.bak.")
     if problems:
         out("These need your attention:")

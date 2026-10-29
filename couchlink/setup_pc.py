@@ -13,7 +13,7 @@ from .actions import send_magic_packet
 from .auth import KEY_NAME_RE, MIN_PASSWORD, hash_api_key, hash_password, remove_setup_code
 from .auth import new_api_key as generate_key
 from .common import DOCS_URL
-from .config import DEFAULTS, load_config, save_config, set_api_key, set_config_value, validate
+from .config import DEFAULTS, load_config, save_answers, set_api_key, set_config_value, update_config, validate
 from .setup_cec import couchlink_service
 
 
@@ -37,15 +37,12 @@ def new_api_key(path, name="default", out=print):
     if not KEY_NAME_RE.fullmatch(name) or name in DEFAULTS:
         out("Use a name of letters, digits, - and _, such as home-assistant, that isn't a setting's name.")
         return 1
-    try:
-        with open(path) as f:
-            text = f.read()
-    except FileNotFoundError:
+    if not os.path.exists(path):
         out(f"{path} not found. Run the installer first.")
         return 1
     key = generate_key()
     try:
-        save_config(path, text, set_api_key(text, name, hash_api_key(key)))
+        update_config(path, lambda text: set_api_key(text, name, hash_api_key(key)))
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --new-api-key {name}")
         return 1
@@ -71,18 +68,16 @@ def ask_password(secret, out):
 
 def set_admin_password(path, out=print, secret=getpass.getpass):
     """sudo couchlink --admin-password: set the settings page's password."""
-    try:
-        with open(path) as f:
-            text = f.read()
-    except FileNotFoundError:
+    if not os.path.exists(path):
         out(f"{path} not found. Run the installer first.")
         return 1
-    password = ask_password(secret, out)
+    password = ask_password(secret, out)       # before taking the lock, which isn't held while you type
     if password is None:
         out("The password was not changed.")
         return 1
+    hashed = hash_password(password)
     try:
-        save_config(path, text, set_config_value(text, "admin_password_hash", hash_password(password)))
+        update_config(path, lambda text: set_config_value(text, "admin_password_hash", hashed))
     except PermissionError:
         out("Run it with sudo: sudo couchlink --admin-password")
         return 1
@@ -335,23 +330,29 @@ def run_setup(path, ask=input, out=print, mac_finder=find_mac, ssh_setup=setup_s
             out(f"This replaces the key named {key_name}, and the old one stops working.")
         api_key = generate_key()
 
-    original = text
-    for key, value in (("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")),
-                       ("ssh_user", user), ("pc_name", name or None),
-                       ("auto_switch_on_pc_wake", wake_mode), ("on_pc_sleep", sleep_mode),
-                       ("use_tv", use_tv), ("status_page_buttons", buttons),
-                       ("admin_password_hash", hash_password(password) if password else None)):
-        if value is not None:
-            text = set_config_value(text, key, value)
-    if api_key:
-        text = set_api_key(text, key_name, hash_api_key(api_key))
+    answers = [(key, value) for key, value in (
+        ("pc_host", host), ("pc_mac", mac.lower().replace("-", ":")), ("ssh_user", user),
+        ("pc_name", name or None), ("auto_switch_on_pc_wake", wake_mode), ("on_pc_sleep", sleep_mode),
+        ("use_tv", use_tv), ("status_page_buttons", buttons),
+        ("admin_password_hash", hash_password(password) if password else None)) if value is not None]
+
+    def answer(config):
+        for key, value in answers:
+            config = set_config_value(config, key, value)
+        return set_api_key(config, key_name, hash_api_key(api_key)) if api_key else config
+    answered = {key for key, _ in answers} | ({"api_keys"} if api_key else set())
     try:
-        save_config(path, original, text)
+        saved, kept, problem = save_answers(path, text, answer, answered)
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup")
         return 1
+    if problem:
+        out(f"Nothing was saved: {problem}. Run sudo bash install.sh --setup again.")
+        return 1
     out("")
-    out(f"Saved to {path}. The previous version is in {path}.bak.")
+    out(f"Saved to {path}. The previous version is in {path}.bak." if saved else f"Nothing changed in {path}.")
+    if kept:
+        out(f"Kept from changes saved while you answered: {', '.join(kept)}")
     if api_key:
         out("")
         show_api_key(api_key, key_name, path, out)

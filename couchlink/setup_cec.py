@@ -4,7 +4,7 @@
 import subprocess
 
 from .cec import cec_scan, cec_watch, dotted
-from .config import DEFAULTS, load_config, save_config, set_config_value, unset_config_value, validate
+from .config import DEFAULTS, load_config, save_answers, set_config_value, unset_config_value, validate
 
 
 def couchlink_service(action):
@@ -145,25 +145,41 @@ def run_cec_setup(path, ask=input, out=print, scan=cec_scan, watch=cec_watch, se
             service("start")
             out("Started couchlink.service again.")
 
-    original = text
-    text = set_config_value(text, "pc_addresses", [pc])
+    answered = {"pc_addresses", "pi_address", "soundbar_address"}
     if current.get("use_tv") is False:
-        text = set_config_value(text, "use_tv", True)       # finding the addresses means there is a TV
-    text = set_config_value(text, "pi_address", pi)
-    text = set_config_value(text, "soundbar_address", bar) if bar else unset_config_value(text, "soundbar_address")
+        answered.add("use_tv")
     if switch_to:
-        text = set_config_value(text, "on_pc_sleep", "switch")
-        text = set_config_value(text, "pc_sleep_switch_to", switch_to)
+        answered |= {"on_pc_sleep", "pc_sleep_switch_to"}
     elif declined and current.get("on_pc_sleep") == "switch":
-        text = set_config_value(text, "on_pc_sleep", "nothing")
+        answered.add("on_pc_sleep")
+
+    def answer(config):
+        config = set_config_value(config, "pc_addresses", [pc])
+        if current.get("use_tv") is False:
+            config = set_config_value(config, "use_tv", True)       # finding the addresses means there is a TV
+        config = set_config_value(config, "pi_address", pi)
+        config = (set_config_value(config, "soundbar_address", bar) if bar
+                  else unset_config_value(config, "soundbar_address"))
+        if switch_to:
+            config = set_config_value(config, "on_pc_sleep", "switch")
+            config = set_config_value(config, "pc_sleep_switch_to", switch_to)
+        elif declined and current.get("on_pc_sleep") == "switch":
+            config = set_config_value(config, "on_pc_sleep", "nothing")
+        return config
+
     try:
-        save_config(path, original, text)
+        saved, kept, problem = save_answers(path, text, answer, answered)
     except PermissionError:
         out(f"Can't write {path}. Run it with sudo: sudo couchlink --setup-cec")
         return 1
+    if problem:
+        out(f"Nothing was saved: {problem}. Run sudo bash install.sh --setup-cec again.")
+        return 1
 
     out("")
-    out(f"Saved to {path}. The previous version is in {path}.bak.")
+    out(f"Saved to {path}. The previous version is in {path}.bak." if saved else f"Nothing changed in {path}.")
+    if kept:
+        out(f"Kept from changes saved while you answered: {', '.join(kept)}")
     out(f"  pc_addresses = [\"{pc}\"]      the PC ({dotted(pc)})")
     out(f"  pi_address = \"{pi}\"          the Pi ({dotted(pi)})")
     if bar:

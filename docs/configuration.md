@@ -101,7 +101,10 @@ use the CEC adapter at a time.
 ## Changing settings
 
 The settings are kept in `/etc/couchlink/config.toml`, which the installer
-creates.
+creates. Saves are safe if the Pi loses power partway through, which happens
+when it's powered from the TV's USB port. CouchLink writes the new file next
+to the old one and swaps it in at once, so the config is never left empty or
+cut off.
 
 ### On the settings page
 
@@ -135,7 +138,9 @@ sudo bash install.sh --setup
   and Home Assistant
 
 Press Enter to keep the value in brackets. It keeps the comments in the file
-and saves the previous version as `config.toml.bak`.
+and saves the previous version as `config.toml.bak`. If something is saved on
+the settings page while you answer, that change is kept too, and `--setup`
+says which settings it kept.
 
 Then it offers to set up the SSH key (step 5 of
 [Preparing the PC](preparing-the-pc.md)). If the PC is asleep, it offers to

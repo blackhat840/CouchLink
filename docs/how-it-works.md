@@ -146,14 +146,15 @@ wake by itself and turns the TV on and switches it to the PC
 ## Without a TV
 
 CouchLink can also run with no TV at all, only to wake the PC for remote play,
-for example to stream to a Steam Deck while you are away. Choose "No" when
-`sudo bash install.sh --setup` asks whether the Pi is plugged into a TV, or set
-`use_tv = false` in the config.
+for example to stream to a Steam Deck while you are away. Turn off "A TV is
+plugged into the Pi" on the [settings page](status-page-and-logs.md#settings-page)
+and save. In the terminal, choose "No" when `sudo bash install.sh --setup` asks
+whether the Pi is plugged into a TV, or set `use_tv = false` in the config.
 
 Without a TV:
 
 - CouchLink doesn't start `cec-client` and needs no CEC addresses. Skip
-  `--setup-cec`. The Pi only needs the network.
+  finding the HDMI inputs. The Pi only needs the network.
 - It never suspends the PC by itself, and never wakes it by itself.
 - **Wake PC** on the status page, or `POST /api/wake`, wakes the PC and starts
   a remote session. **Wake PC and TV** is not offered.
@@ -164,8 +165,10 @@ Without a TV:
   left alone. There is no TV to turn on.
 - The status page shows only the PC: its state, the buttons and the log.
 
-To go back to using a TV, run `sudo bash install.sh --setup-cec`. It finds the
-CEC addresses and turns `use_tv` back on.
+To go back to using a TV, turn "A TV is plugged into the Pi" back on and save,
+then use **Find the HDMI inputs** on the settings page. In the terminal,
+`sudo bash install.sh --setup-cec` finds the CEC addresses and turns `use_tv`
+back on.
 
 ---
 

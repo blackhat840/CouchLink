@@ -1,6 +1,8 @@
 # Configuration
 
-Finding your CEC addresses, editing the config file, and every setting.
+Finding your CEC addresses, changing settings, and every setting. The settings
+page is the easy way to do both. The terminal and the config file are there as
+advanced options.
 
 ## Finding your CEC addresses
 
@@ -29,7 +31,7 @@ the HDMI inputs**:
 CouchLink keeps running while it does this. It uses the same connection to
 the TV.
 
-### In the terminal
+### Advanced: finding them in the terminal
 
 ```bash
 sudo bash install.sh --setup-cec
@@ -51,7 +53,7 @@ sudo bash install.sh --setup-cec
 6. Saves `pc_addresses`, `pi_address`, `soundbar_address` and the sleep input,
    keeping the previous file as `config.toml.bak`.
 
-### By hand
+### Advanced: finding them by hand
 
 **Step 1: scan the bus.**
 
@@ -90,15 +92,22 @@ Here the soundbar (logical address `5`) reports that its active input is now
 Stop `couchlink.service` before running either command. Only one program can
 use the CEC adapter at a time.
 
-## The config file
+## Changing settings
 
-The installer creates `/etc/couchlink/config.toml`.
+The settings are kept in `/etc/couchlink/config.toml`, which the installer
+creates.
 
-### The settings
+### On the settings page
 
-The [settings page](status-page-and-logs.md#settings-page) has the common
-settings, and is the easiest way to change them. To answer questions in the
-terminal instead:
+The [settings page](status-page-and-logs.md#settings-page) is the easy way. It
+has the PC's address, the HDMI inputs, what happens when the PC wakes or
+sleeps by itself, the status page's buttons, a few timings, the API keys and
+its own password. Saving checks the values, keeps the comments in the file,
+and restarts CouchLink. The rest of the settings are only in the file.
+
+### Advanced: in the terminal
+
+To answer questions in the terminal instead:
 
 ```bash
 sudo bash install.sh --setup
@@ -127,52 +136,11 @@ Then it offers to set up the SSH key (step 5 of
 wake it first, and pauses `couchlink.service` so the PC isn't put back to
 sleep. If SSH fails, it says why and what to do.
 
-### Updating an older config
+### Advanced: editing the file
 
-`install.sh --update` brings your config up to date by itself. To do it by
-hand, or to see what would change first:
-
-```bash
-sudo couchlink --migrate-config --dry-run   # only show the changes
-sudo couchlink --migrate-config             # make them
-```
-
-It explains every change it makes:
-
-- Settings added in newer versions are added, with their default values and
-  comments, in the right section.
-- A setting name with a typo is fixed, for example `pc_adress` becomes
-  `pc_addresses`.
-- Settings that were renamed get their new name. Settings that CouchLink does
-  not know, or that were removed, are commented out, never deleted.
-- A true, false or number written in quotes is fixed, for example `"false"`
-  becomes `false`.
-
-Things only you can fill in, such as the CEC addresses, are listed at the end.
-The previous version of the file is saved as `config.toml.bak`.
-
-The [settings page](status-page-and-logs.md#settings-page) changes the most
-common settings from a browser.
-
-### API keys
-
-Keys for scripts and Home Assistant are in their own table at the end of the
-file, one per line, with only a hash of each key:
-
-```toml
-[api_keys]
-home-assistant = "sha256:..."
-phone = "sha256:..."
-```
-
-Generate and revoke them on the settings page, or generate one with
-`sudo couchlink --new-api-key NAME`. A config from 2.6 with `api_key_hash`
-keeps working, and the next update moves that key here as `default`.
-
-### Editing the file
-
-The CEC addresses, and any other setting, go in the file itself. Only root can
-read it, because it holds password and key hashes, so edit it with:
+Every setting can go in the file itself, including the ones the settings page
+doesn't have. Only root can read it, because it holds password and key
+hashes, so edit it with:
 
 ```bash
 sudo nano /etc/couchlink/config.toml
@@ -205,10 +173,54 @@ sudo couchlink --check-config
 ```
 
 It prints every setting with the value CouchLink will use, or a list of what is
-wrong. Misspelled setting names are reported too.
+wrong. Misspelled setting names are reported too. Then restart CouchLink to use
+the change:
+
+```bash
+sudo systemctl restart couchlink
+```
 
 Section names such as `[pc]` are only there for readability. Each section may
 appear only once in the file.
+
+### Updating an older config
+
+`install.sh --update` brings your config up to date by itself. To do it by
+hand, or to see what would change first:
+
+```bash
+sudo couchlink --migrate-config --dry-run   # only show the changes
+sudo couchlink --migrate-config             # make them
+```
+
+It explains every change it makes:
+
+- Settings added in newer versions are added, with their default values and
+  comments, in the right section.
+- A setting name with a typo is fixed, for example `pc_adress` becomes
+  `pc_addresses`.
+- Settings that were renamed get their new name. Settings that CouchLink does
+  not know, or that were removed, are commented out, never deleted.
+- A true, false or number written in quotes is fixed, for example `"false"`
+  becomes `false`.
+
+Things only you can fill in, such as the CEC addresses, are listed at the end.
+The previous version of the file is saved as `config.toml.bak`.
+
+### API keys
+
+Keys for scripts and Home Assistant are in their own table at the end of the
+file, one per line, with only a hash of each key:
+
+```toml
+[api_keys]
+home-assistant = "sha256:..."
+phone = "sha256:..."
+```
+
+Generate and revoke them on the settings page, or generate one with
+`sudo couchlink --new-api-key NAME`. A config from 2.6 with `api_key_hash`
+keeps working, and the next update moves that key here as `default`.
 
 ## Settings reference
 

@@ -29,8 +29,9 @@ is installed on the PC.
 - **Undoes automatic input switches** that some TVs and soundbars make right
   after a device wakes up.
 - **Optional:** forwards TV remote buttons to the PC as a USB keyboard.
-- **Guided setup:** the installer asks for your settings and finds the CEC
-  addresses with you.
+- **Setup in a browser:** after the installer, the settings page finds the
+  PC's MAC address and the HDMI inputs with you. The terminal and the config
+  file are still there for advanced setups.
 - **Safe to try:** a dry run that changes nothing, a status page, and offline
   tests.
 
@@ -68,6 +69,9 @@ Then:
 3. Set up the PC so the Pi can wake it and put it to sleep. See
    [Preparing the PC](docs/preparing-the-pc.md).
 4. Give the Pi an SSH key the PC trusts: `sudo bash install.sh --setup-ssh`.
+
+Rather set up in the terminal, or edit the config file yourself? See
+[Advanced setup](docs/installation.md#advanced-setup).
 
 ## Updating
 

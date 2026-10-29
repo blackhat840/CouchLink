@@ -89,9 +89,40 @@ Wired Ethernet is the most reliable way to wake the PC. See
 
    **Check SSH to the PC** on the settings page tells you whether it works.
 
-To answer the questions in the terminal instead of the browser, run
-`sudo bash install.sh --setup`, then `sudo bash install.sh --setup-cec` with the
-TV on.
+Rather use the terminal, or write the config yourself? See
+[Advanced setup](#advanced-setup).
+
+## Advanced setup
+
+The browser setup above is all most people need. These are for setting up
+without a browser, or for settings the page doesn't have.
+
+### In the terminal
+
+Answer `n` when the installer asks "Set up in the browser?". It then asks for
+the settings in the terminal, offers to set up the SSH key, and offers to find
+the HDMI inputs. To run the same steps later:
+
+| Command | What it does |
+|---|---|
+| `sudo bash install.sh --setup` | Asks for the PC's address, the SSH user, what happens when the PC wakes or sleeps by itself, the settings page's password and an API key. Then it offers to set up the SSH key. See [In the terminal](configuration.md#advanced-in-the-terminal). |
+| `sudo bash install.sh --setup-cec` | Finds the HDMI inputs, with the TV on. See [Finding your CEC addresses](configuration.md#advanced-finding-them-in-the-terminal). |
+| `sudo bash install.sh --setup-ssh` | Gives the Pi an SSH key the PC trusts. |
+
+### By hand
+
+Every setting is in `/etc/couchlink/config.toml`. To fill it in yourself:
+
+```bash
+sudo nano /etc/couchlink/config.toml
+sudo couchlink --check-config
+sudo systemctl restart couchlink
+```
+
+See [Editing the file](configuration.md#advanced-editing-the-file) for an
+example, and the [Settings reference](configuration.md#settings-reference) for
+every setting. To find the HDMI inputs without CouchLink's help, see
+[Finding them by hand](configuration.md#advanced-finding-them-by-hand).
 
 ## Testing with a dry run
 
@@ -138,9 +169,16 @@ sudo systemctl disable --now couchlink.service
 
 ## Changing settings later
 
+Use the [settings page](status-page-and-logs.md#settings-page) at
+`http://<pi>:8080/admin`, or the Settings button on the status page. It
+changes the common settings, finds the HDMI inputs and the PC's MAC address,
+checks SSH to the PC, and manages the API keys and its own password. Saving
+restarts CouchLink by itself.
+
+### Advanced: in the terminal
+
 | Command | What it does |
 |---|---|
-| The [settings page](status-page-and-logs.md#settings-page), `http://<pi>:8080/admin` | Changes the common settings, finds the HDMI inputs, and manages the API keys and its own password, from a browser |
 | `sudo bash install.sh --setup` | Asks for the settings in the terminal, all but the CEC addresses. Press Enter to keep a value. |
 | `sudo bash install.sh --setup-cec` | Finds the CEC addresses in the terminal |
 | `sudo bash install.sh --setup-ssh` | Gives the Pi an SSH key the PC trusts |
@@ -150,9 +188,8 @@ sudo systemctl disable --now couchlink.service
 | `sudo nano /etc/couchlink/config.toml` | Edits any setting by hand. See [Configuration](configuration.md). |
 
 After `--setup`, `--new-api-key` or editing the file, restart CouchLink to use
-the change: `sudo systemctl restart couchlink`. The settings page and
-`--setup-cec` restart it by themselves, and keys made on the settings page
-work straight away.
+the change: `sudo systemctl restart couchlink`. `--setup-cec` restarts it by
+itself.
 
 ## Updating
 

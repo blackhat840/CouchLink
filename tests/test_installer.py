@@ -241,6 +241,81 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertNotIn("secrets.toml", out.split("Checking your config")[-1].split("Installing")[0])
 
+    def test_update_runs_couchlink_as_its_own_user(self):
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        conf_dir = os.path.join(self.root, "etc/couchlink")
+        state = os.path.join(self.root, "var/lib/couchlink")
+        self.assertIn("skipped: useradd --system --user-group --home-dir /var/lib/couchlink --no-create-home "
+                      "--shell /usr/sbin/nologin couchlink", out)
+        self.assertIn("skipped: usermod -aG video couchlink", out)
+        owned = next(line for line in out.splitlines() if "skipped: chown couchlink:couchlink" in line)
+        for name in ("", "/config.toml", "/config.toml.bak", "/secrets.toml"):
+            self.assertIn(conf_dir + name + " ", owned + " ")
+        self.assertIn(f"skipped: chown -R couchlink:couchlink {state}", out)
+        assert_mode(self, conf_dir, 0o755)
+        assert_mode(self, os.path.join(conf_dir, "config.toml"), 0o644)
+        assert_private(self, os.path.join(conf_dir, "secrets.toml"))
+        for folder in (state, os.path.join(state, ".ssh")):
+            self.assertTrue(os.path.isdir(folder), folder)
+            assert_mode(self, folder, 0o700)
+        with open(os.path.join(self.root, "etc/systemd/system/couchlink.service")) as f:
+            unit = f.read()
+        for line in ("User=couchlink", "Group=couchlink", "SupplementaryGroups=video", "NoNewPrivileges=yes",
+                     "ProtectSystem=strict", "ReadWritePaths=/etc/couchlink", "StateDirectory=couchlink",
+                     "ProtectHome=yes", "PrivateTmp=yes", "ProtectKernelTunables=yes", "ProtectKernelModules=yes",
+                     "ProtectControlGroups=yes", "AmbientCapabilities=CAP_NET_RAW",
+                     "CapabilityBoundingSet=CAP_NET_RAW",
+                     "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK"):
+            self.assertIn(line + "\n", unit)
+        # These would block /dev/cec0 or the 32-bit Python on a 64-bit kernel
+        for risky in ("DeviceAllow", "ProtectClock", "PrivateDevices", "SystemCallArchitectures"):
+            self.assertNotIn(risky, unit)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "etc/udev/rules.d/70-couchlink-hidg.rules")))
+
+    @unittest.skipUnless(shutil.which("ssh-keygen"), "ssh-keygen is needed")
+    def test_update_copies_roots_ssh_key_and_the_pcs_known_hosts_entry(self):
+        old = os.path.join(self.root, "root/.ssh")
+        os.makedirs(old)
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", os.path.join(old, "id_ed25519")],
+                       check=True)
+        with open(os.path.join(old, "id_ed25519.pub")) as f:
+            host_key = " ".join(f.read().split()[:2])          # any valid key works as the PC's host key
+        with open(os.path.join(old, "known_hosts"), "w") as f:
+            f.write(f"192.168.1.50 {host_key}\n192.168.1.99 {host_key}\n")
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        new = os.path.join(self.root, "var/lib/couchlink/.ssh")
+        for name in ("id_ed25519", "id_ed25519.pub"):
+            with open(os.path.join(old, name)) as a, open(os.path.join(new, name)) as b:
+                self.assertEqual(a.read(), b.read())
+        assert_private(self, os.path.join(new, "id_ed25519"))
+        self.assertTrue(os.path.exists(os.path.join(old, "id_ed25519")))          # root's key stays
+        with open(os.path.join(new, "known_hosts")) as f:
+            known = f.read()
+        self.assertIn("192.168.1.50 ", known)
+        self.assertNotIn("192.168.1.99", known)                                      # only the PC's entry
+        self.assertIn("Copied root's SSH key to /var/lib/couchlink/.ssh", out)
+        self.assertIn("Copied the PC's entry (192.168.1.50) from root's known_hosts", out)
+        code, out = self.install("--update", "--local")                            # already there
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("Copied root's SSH key", out)
+        with open(os.path.join(new, "known_hosts")) as f:
+            self.assertEqual(f.read(), known)
+
+    def test_update_gives_an_existing_keyboard_to_couchlink(self):
+        units = os.path.join(self.root, "etc/systemd/system")
+        os.makedirs(units, exist_ok=True)
+        with open(os.path.join(units, "couchlink-hid.service"), "w") as f:
+            f.write("[Service]\n")                     # set up with --with-hid by an older version
+        code, out = self.install("--update", "--local")
+        self.assertEqual(code, 0, out)
+        with open(os.path.join(self.root, "etc/udev/rules.d/70-couchlink-hidg.rules")) as f:
+            self.assertIn('KERNEL=="hidg[0-9]*", GROUP="couchlink", MODE="0660"', f.read())
+        self.assertIn("Installed a udev rule that gives the couchlink user the USB keyboard", out)
+        code, out = self.install("--update", "--local")
+        self.assertNotIn("Installed a udev rule", out)
+
     def test_update_brings_an_old_config_up_to_date(self):
         conf = os.path.join(self.root, "etc/couchlink/config.toml")
         with open(conf, "w") as f:

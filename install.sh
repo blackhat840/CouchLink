@@ -196,6 +196,7 @@ LIB="$ROOT/usr/local/lib/couchlink"
 CONF_DIR="$ROOT/etc/couchlink"
 CONF="$CONF_DIR/config.toml"
 SECRETS="$CONF_DIR/secrets.toml"
+STATE_DIR="$ROOT/var/lib/couchlink"
 UNIT_DIR="$ROOT/etc/systemd/system"
 OLD_VER=""
 # Under a test root the logs go there too, so two installers never share one.
@@ -407,6 +408,50 @@ fi
 chmod 0600 "$SECRETS"
 [ -z "$MIGRATED" ] || rm -rf "$MIG_DIR"
 
+# ---------------------------------------------------------------- the couchlink user
+# CouchLink runs as its own system user, not root, so a bug in its web pages can't reach the
+# rest of the Pi. The video group owns the HDMI-CEC device, /dev/cec0.
+say "Setting up the couchlink user"
+if [ "$TEST_MODE" != 1 ] && getent passwd couchlink >/dev/null; then
+    echo "The couchlink user is already there"
+else
+    run useradd --system --user-group --home-dir /var/lib/couchlink --no-create-home \
+        --shell /usr/sbin/nologin couchlink
+    echo "Created the couchlink system user, with no login shell"
+fi
+run usermod -aG video couchlink
+install -d -m 0700 "$STATE_DIR" "$STATE_DIR/.ssh"
+
+# Older versions ran as root, with root's SSH key. Copy it and the PC's known_hosts entry, so
+# the PC doesn't have to be told about a new key. Root's own key is left where it is.
+OLD_KEY="$ROOT/root/.ssh/id_ed25519"
+NEW_KEY="$STATE_DIR/.ssh/id_ed25519"
+if [ -f "$OLD_KEY" ] && [ ! -f "$NEW_KEY" ]; then
+    install -m 0600 "$OLD_KEY" "$NEW_KEY"
+    [ ! -f "$OLD_KEY.pub" ] || install -m 0644 "$OLD_KEY.pub" "$NEW_KEY.pub"
+    echo "Copied root's SSH key to /var/lib/couchlink/.ssh. Root's key was left in place"
+    PC_HOST="$(PYTHONPATH="$HERE" python3 -c 'import sys; from couchlink.config import load_config; print((load_config(sys.argv[1])[0] or {}).get("pc_host") or "")' "$CONF" 2>/dev/null || true)"
+    if [ -n "$PC_HOST" ] && [ -f "$ROOT/root/.ssh/known_hosts" ] && command -v ssh-keygen >/dev/null; then
+        ssh-keygen -F "$PC_HOST" -f "$ROOT/root/.ssh/known_hosts" | grep -v '^#' >> "$STATE_DIR/.ssh/known_hosts" || true
+        if [ -s "$STATE_DIR/.ssh/known_hosts" ]; then
+            chmod 0644 "$STATE_DIR/.ssh/known_hosts"
+            echo "Copied the PC's entry ($PC_HOST) from root's known_hosts"
+        fi
+    fi
+fi
+
+# The service owns its files. Anyone can read config.toml, and secrets.toml stays readable by
+# its owner only. Files that sudo couchlink writes later keep this owner.
+chmod 0755 "$CONF_DIR"
+OWNED="$CONF_DIR"
+for f in "$CONF" "$CONF.bak" "$CONF.lock" "$SECRETS" "$CONF_DIR/setup-code"; do
+    [ ! -e "$f" ] || OWNED="$OWNED $f"
+done
+# shellcheck disable=SC2086
+run chown couchlink:couchlink $OWNED
+run chown -R couchlink:couchlink "$STATE_DIR"
+echo "/etc/couchlink and /var/lib/couchlink now belong to the couchlink user"
+
 SERVICE_FILE="$UNIT_DIR/couchlink.service"
 SERVICE_NEW="$(mktemp)"
 cat > "$SERVICE_NEW" <<'UNIT'
@@ -421,6 +466,37 @@ ExecStart=/usr/bin/python3 -u /usr/local/bin/couchlink
 Restart=always
 RestartSec=2
 RestartPreventExitStatus=78
+
+# Run as the couchlink user. video owns the HDMI-CEC device. The couchlink group owns the
+# USB keyboard device, through a udev rule.
+User=couchlink
+Group=couchlink
+SupplementaryGroups=video
+StateDirectory=couchlink
+StateDirectoryMode=0700
+UMask=0077
+
+# ping on Bookworm needs CAP_NET_RAW, and NoNewPrivileges keeps it from getting it from the
+# ping binary, so the service holds it. It's the only capability it has.
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+NoNewPrivileges=yes
+
+# Read-only everywhere except its own config and state
+ProtectSystem=strict
+ReadWritePaths=/etc/couchlink
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target
@@ -532,6 +608,26 @@ HIDUNIT
     run systemctl daemon-reload
     run systemctl enable couchlink-hid.service
     echo "Installed and enabled couchlink-hid.service"
+fi
+
+# The keyboard device, /dev/hidg0, belongs to root. A udev rule gives it to the couchlink group.
+# This also covers installs that set up the keyboard before CouchLink ran as its own user.
+if [ "$WITH_HID" = 1 ] || [ -f "$UNIT_DIR/couchlink-hid.service" ]; then
+    install -d "$ROOT/etc/udev/rules.d"
+    HID_RULE="$ROOT/etc/udev/rules.d/70-couchlink-hidg.rules"
+    printf '%s\n' "# Lets the couchlink service type on the USB keyboard gadget" \
+        'KERNEL=="hidg[0-9]*", GROUP="couchlink", MODE="0660"' > "$HID_RULE.new"
+    if cmp -s "$HID_RULE.new" "$HID_RULE"; then
+        rm -f "$HID_RULE.new"
+    else
+        mv "$HID_RULE.new" "$HID_RULE"
+        echo "Installed a udev rule that gives the couchlink user the USB keyboard"
+        run udevadm control --reload
+        if [ -e "$ROOT/dev/hidg0" ]; then
+            run chgrp couchlink /dev/hidg0
+            run chmod 0660 /dev/hidg0
+        fi
+    fi
 fi
 
 if [ "$SERVICE_CHANGED" = 1 ] || [ "$WITH_HID" = 1 ]; then

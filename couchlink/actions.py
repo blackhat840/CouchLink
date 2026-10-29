@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 
-from .common import log
+from .common import log, ssh_command
 
 
 def send_magic_packet(mac, broadcast, port):
@@ -44,8 +44,7 @@ class RealActions:
         def run():
             try:
                 r = subprocess.run(
-                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
-                     f"{self.cfg.ssh_user}@{self.cfg.pc_host}", self.cfg.suspend_command],
+                    ssh_command(f"{self.cfg.ssh_user}@{self.cfg.pc_host}", self.cfg.suspend_command),
                     capture_output=True, text=True, timeout=20)
                 self.events.put(("suspend_done", r.returncode, r.stderr.strip()))
             except subprocess.TimeoutExpired:
@@ -65,8 +64,7 @@ class RealActions:
             name = None
             try:
                 r = subprocess.run(
-                    ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5",
-                     f"{self.cfg.ssh_user}@{self.cfg.pc_host}", "hostname"],
+                    ssh_command(f"{self.cfg.ssh_user}@{self.cfg.pc_host}", "hostname"),
                     capture_output=True, text=True, timeout=10)
                 if r.returncode == 0:
                     name = clean(r.stdout.splitlines()[0] if r.stdout else "")

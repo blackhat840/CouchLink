@@ -12,7 +12,7 @@ import time
 from .actions import send_magic_packet
 from .auth import KEY_NAME_RE, MIN_PASSWORD, hash_api_key, hash_password, remove_setup_code
 from .auth import new_api_key as generate_key
-from .common import DOCS_URL
+from .common import DOCS_URL, KNOWN_HOSTS, SSH_KEY, STATE_DIR, own_like, ssh_command
 from .config import (DEFAULTS, load_config, save_answers, secrets_path, set_api_key, set_config_value,
                      update_secrets, validate)
 from .setup_cec import couchlink_service
@@ -158,8 +158,7 @@ def wake_pc(host, send, out, answers=pc_answers, clock=time.monotonic, sleep=tim
 def check_ssh(host, user):
     """(works, advice) for SSH from the Pi to the PC without a password."""
     try:
-        r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", f"{user}@{host}", "echo ok"],
-                           capture_output=True, text=True, timeout=15)
+        r = subprocess.run(ssh_command(f"{user}@{host}", "echo ok"), capture_output=True, text=True, timeout=15)
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"Couldn't run ssh: {e}"
     if r.returncode == 0 and r.stdout.strip() == "ok":
@@ -182,14 +181,20 @@ def setup_ssh_only(path, out=print, ssh_setup=None):
 
 
 def setup_ssh_key(host, user, out):
-    """Create root's SSH key if needed, copy it to the PC, and test it."""
-    key = "/root/.ssh/id_ed25519"
-    if not os.path.exists(key):
-        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key], check=False)
+    """Create CouchLink's SSH key if needed, copy it to the PC, and test it. The key and its
+    known_hosts are in the couchlink user's folder, and belong to that user, who runs the
+    service."""
+    folder = os.path.dirname(SSH_KEY)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    if not os.path.exists(SSH_KEY):
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "couchlink", "-f", SSH_KEY], check=False)
     out(f"Copying the key to {user}@{host}. Type the PC's password when asked.")
-    subprocess.run(["ssh-copy-id", "-i", key + ".pub", f"{user}@{host}"], check=False)
-    r = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", f"{user}@{host}", "echo ok"],
-                       capture_output=True, text=True)
+    subprocess.run(["ssh-copy-id", "-i", SSH_KEY + ".pub", "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
+                    f"{user}@{host}"], check=False)
+    for path in (folder, SSH_KEY, SSH_KEY + ".pub", KNOWN_HOSTS):
+        if os.path.exists(path):
+            own_like(path, STATE_DIR)
+    r = subprocess.run(ssh_command(f"{user}@{host}", "echo ok"), capture_output=True, text=True)
     if r.returncode == 0 and r.stdout.strip() == "ok":
         out("SSH works without a password.")
         return True

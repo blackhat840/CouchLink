@@ -10,6 +10,29 @@ from collections import deque
 DEFAULT_CONFIG_PATH = "/etc/couchlink/config.toml"
 
 
+# The service runs as the couchlink user. Its home and state folder holds the SSH key the
+# PC trusts. Every ssh call names the key and known_hosts, so they're the same whether the
+# service runs it or root does, from sudo couchlink --setup-ssh.
+STATE_DIR = "/var/lib/couchlink"
+SSH_KEY = f"{STATE_DIR}/.ssh/id_ed25519"
+KNOWN_HOSTS = f"{STATE_DIR}/.ssh/known_hosts"
+
+
+def ssh_command(*args):
+    """An ssh command line with CouchLink's own key and known_hosts, that never asks anything."""
+    return ["ssh", "-i", SSH_KEY, "-o", f"UserKnownHostsFile={KNOWN_HOSTS}",
+            "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", *args]
+
+
+def own_like(path, reference):
+    """When root writes a file the service uses, such as from sudo couchlink --setup, give it
+    the same owner as reference: the couchlink user's folder. Otherwise the service couldn't
+    read or replace it."""
+    if getattr(os, "geteuid", lambda: -1)() == 0:
+        st = os.stat(reference)
+        os.chown(path, st.st_uid, st.st_gid)
+
+
 EX_CONFIG = 78
 
 
@@ -44,6 +67,7 @@ def write_private(path, text, mode=0o600):
             os.fsync(f.fileno())
         if mode != 0o600:
             os.chmod(temp, mode)
+        own_like(temp, folder)
         os.replace(temp, path)
     except BaseException:
         try:

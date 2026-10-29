@@ -12,7 +12,7 @@ from types import SimpleNamespace
 
 from . import VERSION
 from .auth import KEY_NAME_RE, PASSWORD_RE
-from .common import log, write_private
+from .common import log, own_like, write_private
 
 try:
     import fcntl
@@ -497,6 +497,7 @@ def config_lock(path):
     with SAVE_LOCK:
         fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
         try:
+            own_like(path + ".lock", os.path.dirname(os.path.abspath(path)))
             if fcntl:
                 fcntl.flock(fd, fcntl.LOCK_EX)
             yield

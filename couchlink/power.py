@@ -5,7 +5,7 @@ shut down."""
 import subprocess
 import time
 
-from .common import log
+from .common import log, ssh_command
 
 
 # Run on the PC by the power watcher. gdbus comes with GLib, which SteamOS and
@@ -51,8 +51,8 @@ def power_watcher(cfg, events):
         connected = False
         try:
             proc = subprocess.Popen(
-                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
-                 "-o", "ServerAliveCountMax=3", target, POWER_WATCH_COMMAND],
+                ssh_command("-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3", target,
+                            POWER_WATCH_COMMAND),
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             for line in proc.stdout:
                 if not connected:
